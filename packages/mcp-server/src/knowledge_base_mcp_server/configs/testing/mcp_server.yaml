@@ -1,0 +1,10 @@
+# Testing overlay — bind loopback on a port nothing else uses, and accept the
+# hosts an in-process ASGI test client sends. The transport is left to the base
+# file, so `TOOLS_ENV=testing MCP_TRANSPORT=stdio` really speaks stdio.
+
+host: 127.0.0.1
+port: 9798
+allowed_hosts:
+  - localhost
+  - 127.0.0.1
+  - testserver

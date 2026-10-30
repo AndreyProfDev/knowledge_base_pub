@@ -1,0 +1,1048 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Knowledge Base",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/memory/{kind}": {
+      "post": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Store memory",
+        "description": "Queue a new item of ``kind``; poll ``Location`` until ``done``.",
+        "operationId": "store_memory",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteAccepted"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "`/requests/{request_id}`: poll it until `done`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "List memory items",
+        "description": "One page of ``kind``'s items; pass ``next_cursor`` back as ``cursor`` for the next.",
+        "operationId": "list_memory_items",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/{kind}/{item_id}": {
+      "put": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Update memory item",
+        "description": "Queue ``payload`` replacing item ``item_id``; ``item_id`` answered is the new key's.",
+        "operationId": "update_memory_item",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteAccepted"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "`/requests/{request_id}`: poll it until `done`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Get memory item",
+        "description": "Item ``item_id`` of ``kind``.",
+        "operationId": "get_memory_item",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Delete memory item",
+        "description": "Delete item ``item_id`` at once; poll ``Location``, which removes its dump file.",
+        "operationId": "delete_memory_item",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteAccepted"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "`/requests/{request_id}`: poll it until `done`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The item is deleted, but its dump file's removal was not queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Search memory",
+        "description": "Hits for ``q``, best first; ``top_k`` and ``min_score`` default to the settings'.",
+        "operationId": "search_memory",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "top_k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Top K"
+            }
+          },
+          {
+            "name": "min_score",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Score"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryHit"
+                  },
+                  "title": "Response Search Memory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/requests/{request_id}": {
+      "get": {
+        "tags": [
+          "requests"
+        ],
+        "summary": "Get memory request",
+        "description": "``queued`` until the worker has run the request, then ``done`` or ``failed``.",
+        "operationId": "get_memory_request",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kinds": {
+      "get": {
+        "tags": [
+          "kinds"
+        ],
+        "summary": "List memory kinds",
+        "description": "Every installed kind with its payload's JSON Schema.",
+        "operationId": "list_memory_kinds",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KindSchema"
+                  },
+                  "type": "array",
+                  "title": "Response List Memory Kinds"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/warmup": {
+      "post": {
+        "tags": [
+          "warmup"
+        ],
+        "summary": "Warmup memory",
+        "description": "Queue every item not stored unchanged. Any bad file or item: 422, nothing queued.",
+        "operationId": "warmup_memory",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupReport"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The warm-up directory is missing, unreadable or holds no items.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A bad file or item; `loc` is (file, kind, index, ...). Nothing queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The queue failed partway; `detail` names the run and what failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/warmup/{run_id}": {
+      "get": {
+        "tags": [
+          "warmup"
+        ],
+        "summary": "Get warmup progress",
+        "description": "A request between retries counts as pending: a failing item fails after ~150 s.",
+        "operationId": "get_warmup_progress",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupProgress"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No run `run_id` was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BaseModel": {
+        "properties": {},
+        "type": "object",
+        "title": "BaseModel"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "JsonValue": {},
+      "KindSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "payload_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload Schema"
+          },
+          "max_chars": {
+            "type": "integer",
+            "title": "Max Chars"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "payload_schema",
+          "max_chars"
+        ],
+        "title": "KindSchema",
+        "description": "An installed kind, its payload's JSON Schema, and its cap on the whole embed text."
+      },
+      "MemoryHit": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "updated_at",
+          "payload",
+          "score"
+        ],
+        "title": "MemoryHit",
+        "description": "A search result: an item plus its cosine score."
+      },
+      "MemoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "updated_at",
+          "payload"
+        ],
+        "title": "MemoryItem",
+        "description": "One stored item, its payload validated back into its kind's model."
+      },
+      "MemoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "MemoryPage",
+        "description": "One page of a kind's items; ``next_cursor`` is ``None`` on the last."
+      },
+      "RequestState": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "status"
+        ],
+        "title": "RequestState",
+        "description": "Where a queued write is: ``error`` is set only when it ``failed``."
+      },
+      "RequestStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "done",
+          "failed"
+        ]
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WarmupFailure": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "error": {
+            "type": "string",
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "item_id",
+          "kind",
+          "error"
+        ],
+        "title": "WarmupFailure",
+        "description": "A write a warm-up run queued that failed its last retry."
+      },
+      "WarmupKindCounts": {
+        "properties": {
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          },
+          "unchanged": {
+            "type": "integer",
+            "title": "Unchanged"
+          }
+        },
+        "type": "object",
+        "required": [
+          "queued",
+          "unchanged"
+        ],
+        "title": "WarmupKindCounts",
+        "description": "One kind's share of a warm-up run."
+      },
+      "WarmupProgress": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "unchanged": {
+            "type": "integer",
+            "title": "Unchanged"
+          },
+          "finished": {
+            "type": "boolean",
+            "title": "Finished"
+          },
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/WarmupFailure"
+            },
+            "type": "array",
+            "title": "Failures"
+          },
+          "failures_truncated": {
+            "type": "boolean",
+            "title": "Failures Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "total",
+          "done",
+          "failed",
+          "pending",
+          "unchanged",
+          "finished",
+          "failures",
+          "failures_truncated"
+        ],
+        "title": "WarmupProgress",
+        "description": "How far the worker is through a warm-up run's writes.\n\n``pending`` includes writes between retries; ``failures`` holds the first 50."
+      },
+      "WarmupReport": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "kinds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WarmupKindCounts"
+            },
+            "type": "object",
+            "title": "Kinds"
+          },
+          "total_queued": {
+            "type": "integer",
+            "title": "Total Queued"
+          },
+          "shadowed": {
+            "items": {
+              "$ref": "#/components/schemas/WarmupShadow"
+            },
+            "type": "array",
+            "title": "Shadowed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "kinds",
+          "total_queued",
+          "shadowed"
+        ],
+        "title": "WarmupReport",
+        "description": "A warm-up run, validated and queued; ``kinds`` lists every installed kind.\n\n``shadowed`` lists each hand-written copy whose payload differs from the dump copy\nthat was queued instead; an identical one is not listed."
+      },
+      "WarmupShadow": {
+        "properties": {
+          "hand_written": {
+            "type": "string",
+            "title": "Hand Written"
+          },
+          "dump": {
+            "type": "string",
+            "title": "Dump"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hand_written",
+          "dump"
+        ],
+        "title": "WarmupShadow",
+        "description": "A hand-written item dropped for its differing dump copy; both as ``file:kind[index]``."
+      },
+      "WriteAccepted": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "item_id",
+          "status"
+        ],
+        "title": "WriteAccepted",
+        "description": "A store, edit or delete taken onto the queue; a delete's request removes its dump file."
+      }
+    }
+  }
+}

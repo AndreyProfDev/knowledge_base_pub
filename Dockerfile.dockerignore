@@ -1,0 +1,18 @@
+# BuildKit reads this, not .dockerignore, for ./Dockerfile; the UI's build, sharing context `.`, keeps .dockerignore.
+.git
+.github
+.venv
+.idea
+.env
+*.egg-info
+__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+**/.DS_Store
+**/node_modules
+**/mutants
+knowledge-warmup
+data
+# npm, not uv: its edits must not invalidate the knowledge-base image's source layer.
+packages/knowledge-base-ui

@@ -1,0 +1,5 @@
+# Local overlay — `uv run knowledge-base-mcp` on the host. The base binds
+# 0.0.0.0 for the container; on the host that would serve the unauthenticated
+# knowledge base on every interface.
+
+host: 127.0.0.1

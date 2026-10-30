@@ -1,0 +1,165 @@
+name: knowledge_base
+
+# Two distinct .env mechanisms are in play here, and they are not the same thing:
+#   * Compose auto-reads ./.env to expand ${VAR} *inside this file*.
+#   * `env_file:` is what puts variables *into the container*, where the
+#     ${secret:...} resolver in each package's YAML then reads them.
+# Both are needed. `required: false` means a missing .env degrades into a clean
+# "set OPEN_AI_API_KEY" error rather than a Compose failure. The key lives in
+# .env; exporting it in the shell reaches no container.
+
+x-kb: &kb
+  build:
+    context: .
+  # Not tools:latest: tools builds that tag for its own server, and sharing it
+  # would let either repository's build replace the other's image. `make ui-e2e`
+  # sets KB_IMAGE_TAG=e2e for the same reason: a branch's e2e build must not
+  # become the image the next `make up` runs against the real memories.
+  image: knowledge-base:${KB_IMAGE_TAG:-latest}
+  env_file:
+    - path: .env
+      required: false
+  # Pinned: a TOOLS_ENV=local in .env would pick LanceDB on the container's
+  # disk. KB_EMBEDDER passes a shell's `KB_EMBEDDER=bge-m3 make serve` through.
+  environment:
+    TOOLS_ENV: prod
+    KB_EMBEDDER: ${KB_EMBEDDER:-openai-small}
+  restart: unless-stopped
+
+services:
+  # The knowledge base's MCP endpoint at http://localhost:9799/mcp, a real
+  # long-running server, so `docker compose up` is the right verb for it.
+  mcp-server:
+    <<: *kb
+    command: ["knowledge-base-mcp"]
+    # Loopback only: the server has no auth.
+    ports:
+      - "127.0.0.1:${KB_MCP_PORT:-9799}:9799"
+    # The queue file, shared with knowledge-worker; the warm-up files prod's
+    # warmup.path names, for the warmup_memory tool.
+    volumes:
+      - knowledge-data:/data
+      - ${KB_WARMUP_DIR:-./knowledge-warmup}:/warmup:ro
+    # knowledge-worker so `make serve` starts it; qdrant healthy because a
+    # register meeting Qdrant still starting exits the server.
+    depends_on:
+      knowledge-worker:
+        condition: service_started
+      qdrant:
+        condition: service_healthy
+    # A TCP probe: the port opens only once register succeeded, so `up --wait`
+    # (make mcp-up) fails instead of passing a crash-looping server.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 9799), timeout=2).close()"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Knowledge Base REST API (FastAPI) on http://localhost:8000; /docs is the
+  # OpenAPI UI. No auth: the 127.0.0.1 port binding keeps it local, and
+  # TrustedHostMiddleware refuses a foreign Host header (DNS rebinding).
+  # KB_API_PORT moves only the host side, so `make ui-e2e` can run beside it.
+  knowledge-api:
+    <<: *kb
+    command: ["knowledge-base-api"]
+    ports:
+      - "127.0.0.1:${KB_API_PORT:-8000}:8000"
+    # Read-only: POST /warmup reads it, never a client-supplied path.
+    volumes:
+      - knowledge-data:/data
+      - ${KB_WARMUP_DIR:-./knowledge-warmup}:/warmup:ro
+    depends_on:
+      knowledge-worker:
+        condition: service_started
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/kinds')"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Knowledge Base web UI on http://localhost:8081: nginx serves the SPA and
+  # proxies /api/ to knowledge-api, one origin so the API needs no CORS.
+  # KB_UI_PORT moves only the host side, as KB_API_PORT does.
+  knowledge-ui:
+    build:
+      context: .
+      dockerfile: packages/knowledge-base-ui/Dockerfile
+      args:
+        VITE_AG_GRID_LICENSE_KEY: ${VITE_AG_GRID_LICENSE_KEY:-}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KB_UI_PORT:-8081}:80"
+    depends_on:
+      knowledge-api:
+        condition: service_healthy
+
+  # Knowledge Base vector store for TOOLS_ENV=prod.
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+    restart: unless-stopped
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    # The image has no curl or wget, so bash's /dev/tcp asks /readyz for a 200.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /readyz HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Knowledge Base write worker: drains the queue mcp-server enqueues into.
+  # SIGINT, not compose's default SIGTERM, which interrupts a running task and
+  # loses it; the grace period lets that task finish.
+  knowledge-worker:
+    <<: *kb
+    command: ["knowledge-base-worker"]
+    stop_signal: SIGINT
+    stop_grace_period: 1m
+    # Writable: every stored item is dumped into the warm-up dir. Runs as uid
+    # 10001; `make kb-warmup-dir` checks it can write the host dir, else ACLs it.
+    volumes:
+      - knowledge-data:/data
+      - ${KB_WARMUP_DIR:-./knowledge-warmup}:/warmup
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  # Optional local GPU embedder (TEI, bge-m3), started only with
+  # COMPOSE_PROFILES=gpu; the host needs the NVIDIA Container Toolkit. Select it
+  # with KB_EMBEDDER=bge-m3. No depends_on from knowledge-worker: without the
+  # profile it would name an absent service, and huey's retries cover TEI
+  # still loading. The host port serves the host's stdio servers.
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cuda-1.9.4
+    profiles: [gpu]
+    command: ["--model-id", "BAAI/bge-m3", "--auto-truncate=false"]
+    restart: unless-stopped
+    volumes:
+      - tei-models:/data
+    ports:
+      - "127.0.0.1:8080:80"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  knowledge-data:
+  qdrant-storage:
+  tei-models:

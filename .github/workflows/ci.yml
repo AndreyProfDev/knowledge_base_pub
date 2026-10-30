@@ -1,0 +1,152 @@
+# Every command here is a `make` target, so CI and the host inner loop cannot
+# drift apart. `lock-check`, `ruff`, `typecheck`, `complexity`, and `coverage`
+# are separate jobs only so each can be a required status check on its own,
+# named for what it gates — `make check` already covers all five via
+# `lock-check`/`lint`/`typecheck`/`coverage`. `kb-check` is the only job running
+# `ui-check` (it is `make check`, which includes it).
+#
+# Every other job's `make sync` runs as `uv sync --frozen` (CI is set by
+# GitHub Actions), so a stale `uv.lock` fails loudly instead of being
+# silently re-resolved into a passing run.
+#
+# `check` runs lint and test as separate steps rather than `make check` so a
+# lint failure still leaves a test table in the job summary.
+name: ci
+
+on:
+  # CI-DISABLED: on demand only. To run on every push and pull request, delete
+  # `workflow_dispatch:` and uncomment the three trigger lines below.
+  # pull_request:
+  # push:
+  #   branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lock-check:
+    name: lock-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Gate
+        run: make lock-check
+
+  ruff:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: make sync
+
+      - name: Gate
+        env:
+          RUFF_OUTPUT_FORMAT: github # inline annotations on the PR diff
+        run: make ruff
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: make sync
+
+      - name: Gate
+        run: make typecheck
+
+  complexity:
+    name: complexity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: make sync
+
+      # The report raises rather than under-count; that must not block the gate.
+      - name: Summary
+        continue-on-error: true
+        run: make complexity-report >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Gate
+        env:
+          RUFF_OUTPUT_FORMAT: github # inline annotations on the PR diff
+        run: make complexity
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: make sync
+
+      # Runs the suite once and leaves .coverage behind; the summary below
+      # reads that data rather than running it again. `always()` on the summary
+      # is what makes the table show up when the gate is what failed.
+      - name: Gate
+        run: make coverage
+
+      - name: Summary
+        if: always()
+        run: |
+          [ -f .coverage ] || exit 0
+          { echo "## Coverage"; echo; make coverage-report; } >> "$GITHUB_STEP_SUMMARY"
+
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: make sync
+
+      - run: make lint
+
+      # -v cancels the -q in addopts; pytest-md-report writes nothing when quiet.
+      - name: Test
+        if: always()
+        run: |
+          make test PYTEST_ARGS="-v --md-report --md-report-flavor gfm \
+            --md-report-color never --md-report-output=test-report.md"
+
+      - name: Summary
+        if: always()
+        run: |
+          [ -f test-report.md ] || exit 0
+          { echo "## Tests"; echo; cat test-report.md; } >> "$GITHUB_STEP_SUMMARY"
+
+  kb-check:
+    name: kb-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/knowledge-base-ui/package-lock.json
+      - run: make sync ui-install
+
+      - name: Gate
+        run: make kb-check

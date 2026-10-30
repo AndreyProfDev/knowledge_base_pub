@@ -1,0 +1,38 @@
+[project]
+name = "knowledge-base-mcp-server"
+version = "0.1.0"
+description = "Serves the knowledge base's tools on its own MCP endpoint."
+readme = "README.md"
+requires-python = ">=3.12"
+
+# This list is what lands in the container: the knowledge base, its three kinds,
+# and the Qdrant store the container (TOOLS_ENV=prod) keeps its points in.
+dependencies = [
+    "knowledge-base-config",
+    "mcp>=2,<3",
+    "tools-knowledge-base[server]",
+    "tools-knowledge-base-entity",
+    "tools-knowledge-base-knowledge",
+    "tools-knowledge-base-qdrant",
+    "tools-knowledge-base-workflow",
+    "uvicorn>=0.34",
+]
+
+[project.scripts]
+knowledge-base-mcp = "knowledge_base_mcp_server.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/knowledge_base_mcp_server"]
+
+# `make mutation`. forkserver: each mutant forks from a collect-only process, so it
+# inherits no state the clean run left behind. tests/test_stdio_process.py spawns the
+# installed script, which runs the unmutated source.
+[tool.mutmut]
+source_paths = ["src"]
+pytest_add_cli_args_test_selection = ["tests"]
+pytest_add_cli_args = ["-p", "no:cacheprovider"]
+process_isolation = "forkserver"

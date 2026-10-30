@@ -1,0 +1,42 @@
+queue:
+  path: ./data/knowledge-queue.db
+  retries: 4
+  retry_delay_seconds: 10
+  retry_backoff: 2
+  timeout_seconds: 5
+embeddings:
+  active: ${oc.env:KB_EMBEDDER,openai-small}
+  embedders:
+    openai-small:
+      base_url: https://api.openai.com/v1
+      model: text-embedding-3-small
+      dimensions: 1536
+      max_input_tokens: 8192
+      tokenizer: tiktoken
+      document_prefix: ""
+      query_prefix: ""
+      min_score: null
+      api_key: ${secret:open_ai_api_key,''}
+    bge-m3:
+      base_url: http://localhost:8080/v1
+      model: BAAI/bge-m3
+      dimensions: 1024
+      max_input_tokens: 8192
+      tokenizer: huggingface
+      document_prefix: ""
+      query_prefix: ""
+      min_score: null
+      api_key: unused
+search:
+  top_k: 5
+item_limits:
+  default_max_chars: 500
+  max_chars:
+    knowledge: 500
+    entity: 500
+    workflow: 500
+warmup:
+  path: ./knowledge-warmup
+  dump: true
+vector_store:
+  collection_prefix: memory

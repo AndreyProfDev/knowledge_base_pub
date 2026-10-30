@@ -1,0 +1,270 @@
+[project]
+name = "knowledge-base-workspace"
+version = "0.1.0"
+description = "A personal knowledge base of typed memories: core library, kind and vector-store plugins, REST API, MCP server and UI."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "knowledge-base-config",
+    "knowledge-base-mcp-server",
+    # [server] pulls in the MCP SDK the knowledge base's MCP tools are built on.
+    "tools-knowledge-base[server]",
+    "tools-knowledge-base-api",
+    "tools-knowledge-base-entity",
+    "tools-knowledge-base-knowledge",
+    "tools-knowledge-base-lancedb",
+    "tools-knowledge-base-qdrant",
+    "tools-knowledge-base-workflow",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+# An npm package: uv rejects a member without a pyproject.toml.
+exclude = ["packages/knowledge-base-ui"]
+
+[tool.uv.sources]
+knowledge-base-config = { workspace = true }
+knowledge-base-mcp-server = { workspace = true }
+tools-knowledge-base = { workspace = true }
+tools-knowledge-base-api = { workspace = true }
+tools-knowledge-base-entity = { workspace = true }
+tools-knowledge-base-knowledge = { workspace = true }
+tools-knowledge-base-lancedb = { workspace = true }
+tools-knowledge-base-qdrant = { workspace = true }
+tools-knowledge-base-workflow = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39",
+    # The HTTP endpoint test drives mcp's client over an ASGI transport.
+    "httpx2>=2",
+    # `make mutation`: run per package (cwd = packages/<pkg>), see its [tool.mutmut].
+    "mutmut==3.8.0",
+    "pytest>=9.1",
+    "pytest-cov>=6.0",
+    "pytest-env>=1.1",
+    "pytest-md-report>=0.7",
+    # basedpyright's "all" mode needs typed pyarrow (the LanceDB adapter's schema).
+    "pyarrow-stubs>=20",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = [
+    "packages/config/src",
+    "packages/knowledge-base/src",
+    "packages/knowledge-base-api/src",
+    "packages/knowledge-base-entity/src",
+    "packages/knowledge-base-knowledge/src",
+    "packages/knowledge-base-lancedb/src",
+    "packages/knowledge-base-qdrant/src",
+    "packages/knowledge-base-workflow/src",
+    "packages/mcp-server/src",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # bugbear
+    "C4",     # comprehensions
+    "SIM",    # simplify
+    "TID",    # tidy imports
+    "RUF",    # ruff-specific
+    "C901",   # complexity
+    "PLR0915",  # too-many-statements — proxy for the ~100-line function limit
+    "PLR0912",  # too-many-branches
+    "PLC0415",  # import outside top-level — no imports inside a function body
+    "PLW0603",  # global statement — no rebinding module state from inside a function
+    "ANN",    # annotations
+    "D",      # docstrings
+    "PGH",    # bans blanket noqa / type: ignore
+    "G",      # logging call style
+    "LOG",    # logging call style
+    "PTH",    # pathlib over os.path
+    "RET",    # return-value consistency
+    "PT",     # pytest style
+    "A",      # shadowed builtins
+    "N",      # pep8-naming
+    "ERA",    # commented-out code
+    "FA",     # missing `from __future__ import annotations`
+    "T20",    # no print
+    "DTZ",    # naive datetime
+    "SLF",    # private member access
+    "ARG",    # unused arguments
+    "INP",    # implicit namespace package
+    "FBT",    # boolean positional argument
+    "S",      # bandit security
+    "TRY",    # exception construction
+    "EM",     # exception message construction
+]
+ignore = [
+    "D104",  # missing docstring in public package
+    "D107",  # missing docstring in __init__
+    "D203",  # incompatible with D211
+    "D213",  # incompatible with D212
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = [
+    "D", "ANN", "PLR2004",
+    "DTZ",  # fixed test timestamps have no real timezone to get wrong
+    "SLF",  # tests assert against internals fakes can't otherwise reach
+    "ARG",  # fake callables match a required signature, not every param used
+    "INP",  # namespace packages by design — consider_namespace_packages = true
+    "S101",  # assert is how pytest asserts
+    "S105",  # fake tokens/passwords are fixture values, not secrets
+    "S104",  # binding to all interfaces is the fixture under test, not real
+]
+"packages/mcp-server/tests/test_stdio_process.py" = [
+    "S603",  # spawns sys.executable on this repo's own module: a fixed argv, no shell,
+             # and a literal environment
+]
+"scripts/*" = [
+    "T201",   # standalone report scripts print by design
+    "INP001", # not a package
+    "S603",   # fixed argv, no shell, no untrusted input
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-statements = 40
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.basedpyright]
+pythonVersion = "3.12"
+include = ["packages"]
+# Setting exclude replaces pyright's defaults (the first three), so they are restated;
+# then mutmut's per-package working copies: one mutated function per mutant, not source.
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "packages/*/mutants"]
+typeCheckingMode = "all"
+# httpx JSON bodies are Any at the boundary by nature.
+reportAny = "none"
+# Fires on every list.append, Click decorator return, etc.
+reportUnusedCallResult = "none"
+# Bans Any in annotations outright; boundary code needs it.
+reportExplicitAny = "none"
+# Conflicts with ruff's line-length wrapping of string literals.
+reportImplicitStringConcatenation = "none"
+# pydantic model fields are unannotated at the class body by design.
+reportUnannotatedClassAttribute = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+# pytest's --import-mode=importlib plus namespace packages makes
+# `from fake_kb import ...` implicitly relative by design; tests also
+# reach into `_private` helpers and take fixtures they don't all use.
+root = "packages/config/tests"
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base/tests"
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base-api/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base-entity/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base-knowledge/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base-lancedb/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base-qdrant/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base-workflow/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
+root = "packages/mcp-server/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+# Measures src only. Pointing coverage at `packages` would count the tests
+# themselves — all at 100% — and inflate the total.
+[tool.coverage.run]
+branch = true
+source = [
+    "packages/config/src",
+    "packages/knowledge-base/src",
+    "packages/knowledge-base-api/src",
+    "packages/knowledge-base-entity/src",
+    "packages/knowledge-base-knowledge/src",
+    "packages/knowledge-base-lancedb/src",
+    "packages/knowledge-base-qdrant/src",
+    "packages/knowledge-base-workflow/src",
+    "packages/mcp-server/src",
+]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+# A console script's `__main__` guard only runs when the module is invoked as a
+# script, so no in-process test can reach it. The `_run` / `_run_*` `pragma: no cover`
+# marks are the same case one level down: one-line wrappers whose body is
+# the blocking `server.run()` / `uvicorn.run(...)` call. Every one of them sits
+# behind an injected `run=` seam, so the dispatch *choosing* them is covered.
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+    'if __name__ == "__main__":',
+]
+
+[tool.pytest.ini_options]
+testpaths = ["packages"]
+# pytest's default list plus mutmut's `mutants/`, which holds a copy of each package's tests.
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}", "mutants"]
+# importlib mode + namespace packages let every package have a `tests/`
+# directory without their module names colliding.
+addopts = "-q --import-mode=importlib"
+consider_namespace_packages = true
+# The core package's fakes (fake_kb, fake_server, ...) are shared by every plugin's tests.
+pythonpath = ["packages/knowledge-base/tests"]
+# MCP_TRANSPORT pinned so a shell that exports it cannot flip the transport tests.
+env = ["TOOLS_ENV=testing", "MCP_TRANSPORT=http"]

@@ -1,0 +1,5 @@
+vector_store:
+  backend: lancedb
+  lancedb:
+    path: ./data/lancedb
+    max_small_fragments: 20

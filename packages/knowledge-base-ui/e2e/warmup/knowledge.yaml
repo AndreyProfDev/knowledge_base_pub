@@ -1,0 +1,7 @@
+# `make ui-e2e` copies this dir and mounts the copy at /warmup, where the dump also writes;
+# kb.spec.ts expects these 2 items and no dump file left by an earlier test.
+knowledge:
+  - category: fact
+    content: Warm-up seeds the knowledge base from YAML files.
+  - category: preference
+    content: Warm-up skips items already stored unchanged.

@@ -1,0 +1,8 @@
+# Testing overlay — also accept TestClient's Host. A list replaces base's, so all
+# three are listed.
+
+host: 127.0.0.1
+allowed_hosts:
+  - localhost
+  - 127.0.0.1
+  - testserver

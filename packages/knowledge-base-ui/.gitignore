@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+.stryker-tmp/
+reports/
+src/api/schema.d.ts
+src/routeTree.gen.ts

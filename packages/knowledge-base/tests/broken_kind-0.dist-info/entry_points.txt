@@ -1,0 +1,2 @@
+[tools_knowledge_base.tests.broken_kinds]
+broken = no_such_module_for_a_kind:Kind

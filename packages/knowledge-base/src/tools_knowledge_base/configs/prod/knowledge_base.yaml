@@ -1,0 +1,12 @@
+queue:
+  path: /data/knowledge-queue.db
+embeddings:
+  embedders:
+    bge-m3:
+      base_url: http://embeddings/v1
+warmup:
+  path: /warmup
+vector_store:
+  backend: qdrant
+  qdrant:
+    location: http://qdrant:6333

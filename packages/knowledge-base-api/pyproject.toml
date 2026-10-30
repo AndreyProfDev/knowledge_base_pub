@@ -1,0 +1,32 @@
+[project]
+name = "tools-knowledge-base-api"
+version = "0.1.0"
+description = "A REST server over the knowledge base's operations, one route set for every memory kind."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143",
+    "knowledge-base-config",
+    "tools-knowledge-base",
+    "uvicorn>=0.34",
+]
+
+[project.scripts]
+knowledge-base-api = "tools_knowledge_base_api.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tools_knowledge_base_api"]
+
+# `make mutation`. forkserver: each mutant forks from a collect-only process, so it
+# inherits no state the clean run left behind.
+[tool.mutmut]
+source_paths = ["src"]
+pytest_add_cli_args_test_selection = ["tests"]
+pytest_add_cli_args = ["-p", "no:cacheprovider"]
+process_isolation = "forkserver"
+# tests/test_openapi_snapshot.py reads it from the package root.
+also_copy = ["openapi.json"]

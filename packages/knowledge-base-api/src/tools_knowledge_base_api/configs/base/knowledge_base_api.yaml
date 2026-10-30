@@ -1,0 +1,11 @@
+# Base configuration for the knowledge base REST server.
+
+# 0.0.0.0 is for the container, so its published port reaches it; compose
+# publishes it on 127.0.0.1 only. The local overlay binds loopback.
+host: 0.0.0.0
+port: 8000
+
+# The API has no auth: any other Host header (a DNS-rebound page) gets 400.
+allowed_hosts:
+  - localhost
+  - 127.0.0.1
