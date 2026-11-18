@@ -6,21 +6,21 @@ import asyncio
 
 import pytest
 from fake_embedder import FakeEmbedder
-from fake_kb import open_fake_kb
+from fake_kb import fake_registry, open_fake_kb
 from fake_kind import FakeKind
-from fake_server import keyed_settings, serve
+from fake_server import call_error, keyed_settings, serve
 from mcp.server import MCPServer
 from mcp.types import Tool, ToolAnnotations
 from pydantic import BaseModel, ConfigDict, PydanticInvalidForJsonSchema
 from stevedore import ExtensionManager
 
-from tools_knowledge_base.configs.settings import KnowledgeBaseSettings
 from tools_knowledge_base.context import KnowledgeBase, open_knowledge_base
 from tools_knowledge_base.errors import KnowledgeBaseError
 from tools_knowledge_base.kinds.protocol import MemoryKind
 from tools_knowledge_base.kinds.registry import KindRegistry
 from tools_knowledge_base.models import MemoryItem, MemoryPage, WriteAccepted
 from tools_knowledge_base.operations import MAX_LIMIT
+from tools_knowledge_base.readiness import require_embedder_key
 from tools_knowledge_base.registration import register
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
@@ -38,10 +38,6 @@ def _listed(server: MCPServer) -> dict[str, Tool]:
     return {tool.name: tool for tool in asyncio.run(server.list_tools())}
 
 
-def _must_not_open(_settings: KnowledgeBaseSettings) -> KnowledgeBase:
-    pytest.fail("must not open")
-
-
 def test_tools_appear_for_each_kind_with_their_annotations(kb: KnowledgeBase) -> None:
     server = MCPServer("test")
     returned = register(server, settings=keyed_settings(), open_kb=lambda _settings: kb)
@@ -50,8 +46,6 @@ def test_tools_appear_for_each_kind_with_their_annotations(kb: KnowledgeBase) ->
     expected: dict[str, ToolAnnotations | None] = {
         "search_memory": READ_ONLY,
         "get_memory_request": READ_ONLY,
-        "warmup_memory": ToolAnnotations(destructive_hint=True, idempotent_hint=True),
-        "get_warmup_progress": READ_ONLY,
     }
     for kind in ("alpha", "beta"):
         expected |= {
@@ -63,7 +57,7 @@ def test_tools_appear_for_each_kind_with_their_annotations(kb: KnowledgeBase) ->
         }
     assert {name: tool.annotations for name, tool in listed.items()} == expected
     # Discovery reads the tool names, and finds duplicates, in what register returns.
-    assert {fn.__name__ for fn in returned} == set(listed)
+    assert {fn.__name__ for fn in returned.tools} == set(listed)
 
     store = listed["store_alpha"].input_schema
     assert set(store["properties"]) == {"title", "tags"}
@@ -113,7 +107,7 @@ def test_the_descriptions_a_client_reads(kb: KnowledgeBase) -> None:
     assert "`min_score` is a cosine similarity; higher is closer" in search
     assert "Raises" not in search
     request = listed["get_memory_request"].description or ""
-    assert "`queued` until the worker has run it" in request
+    assert "`queued` until this server has run it" in request
     assert "Raises" not in request
 
 
@@ -144,22 +138,37 @@ def test_a_multi_line_payload_docstring_is_dedented() -> None:
     assert store.endswith(f"First line.\n\nSecond line, indented in source.{_CAP}")
 
 
-def test_a_keyless_embedder_declines_registration() -> None:
+def _keyless_server(active: str) -> MCPServer:
+    """The real default embedder, keyless: registration succeeds, the first embed fails."""
+    settings = keyed_settings(active, api_key="")
+    kb = open_knowledge_base(settings, kinds=fake_registry(FakeKind("alpha")))
+    server = MCPServer("test")
+    register(server, settings=settings, open_kb=lambda _settings: kb)
+    return server
+
+
+def test_a_keyless_embedder_registers_and_fails_its_first_write() -> None:
     """An empty key, as an unset ``OPEN_AI_API_KEY`` leaves it."""
-    with pytest.raises(
-        KnowledgeBaseError, match=r"'openai-small'.* empty api_key: set OPEN_AI_API_KEY"
-    ):
-        register(MCPServer("test"), settings=keyed_settings(api_key=""), open_kb=_must_not_open)
+    server = _keyless_server("openai-large")
+
+    assert "store_alpha" in _listed(server)
+    assert call_error(server, "store_alpha", title="sky", tags=[]).endswith(
+        "has an empty api_key: set OPEN_AI_API_KEY "
+        "in the environment or in /nonexistent/kb-testing/.env"
+    )
+    assert "'openai-large'" in call_error(server, "search_memory", query="sky")
 
 
 def test_a_keyless_self_hosted_embedder_names_its_own_api_key() -> None:
-    with pytest.raises(KnowledgeBaseError) as raised:
-        register(
-            MCPServer("test"), settings=keyed_settings("bge-m3", api_key=""), open_kb=_must_not_open
-        )
-    assert "'bge-m3'" in str(raised.value)
-    assert "set embeddings.embedders.bge-m3.api_key" in str(raised.value)
-    assert "OPEN_AI_API_KEY" not in str(raised.value)
+    error = call_error(_keyless_server("bge-m3"), "search_memory", query="sky")
+
+    assert "'bge-m3'" in error
+    assert "set embeddings.embedders.bge-m3.api_key" in error
+    assert "OPEN_AI_API_KEY" not in error
+
+
+def test_a_keyed_embedder_passes_the_key_check() -> None:
+    assert require_embedder_key(keyed_settings()) is None
 
 
 def test_no_installed_kind_declines_registration() -> None:

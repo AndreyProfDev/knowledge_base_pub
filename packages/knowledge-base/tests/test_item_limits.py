@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 from click.testing import CliRunner
-from fake_kb import open_fake_kb, stored
+from fake_kb import open_fake_kb, stored, temp_sqlite_settings
 from fake_kind import FakeKind
 from fake_server import serve
 from mcp.server.mcpserver.exceptions import ToolError
@@ -28,7 +28,7 @@ _HINT = "Split the tags across several fake items."
 
 def _limited(default: int, **max_chars: int) -> KnowledgeBaseSettings:
     limits = ItemLimitsSettings(default_max_chars=default, max_chars=max_chars)
-    return get_settings(Environment.TESTING).model_copy(update={"item_limits": limits})
+    return temp_sqlite_settings().model_copy(update={"item_limits": limits})
 
 
 def _payload(length: int) -> dict[str, object]:
@@ -68,7 +68,7 @@ def test_over_cap_store_and_update_raise_before_anything_is_queued(kb: Knowledge
     with pytest.raises(ValidationError, match="item_too_long"):
         update_memory_item(kb, "alpha", item_id, _payload(11))
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_the_cap_is_checked_before_the_token_limit() -> None:
@@ -112,7 +112,7 @@ def test_an_over_cap_tool_call_is_an_error_naming_count_cap_and_hint(kb: Knowled
     message = str(caught.value)
     assert "alpha item is 11 characters; the alpha limit is 10" in message
     assert _HINT in message
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_an_over_cap_cli_store_exits_1_with_the_message_on_stderr(kb: KnowledgeBase) -> None:

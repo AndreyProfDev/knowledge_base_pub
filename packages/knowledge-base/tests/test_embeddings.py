@@ -117,6 +117,30 @@ def test_an_empty_api_key_is_refused_before_any_request() -> None:
     assert server.requests == []
 
 
+def test_an_injected_key_check_runs_before_the_request_and_its_refusal_wins() -> None:
+    server = _Server()
+    checks: list[str] = []
+
+    def _refuse() -> None:
+        checks.append("checked")
+        msg = "injected refusal"
+        raise KnowledgeBaseError(msg)
+
+    refusing = OpenAIEmbedder(
+        _CONFIG,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(server)),
+        encoding=_BYTES,
+        require_key=_refuse,
+    )
+
+    with pytest.raises(KnowledgeBaseError, match="injected refusal"):
+        refusing.count_tokens("sky")
+    with pytest.raises(KnowledgeBaseError, match="injected refusal"):
+        refusing.embed_query("sky")
+    assert checks == ["checked", "checked"]
+    assert server.requests == []
+
+
 def test_a_vector_of_the_wrong_length_raises() -> None:
     with pytest.raises(KnowledgeBaseError, match=r"returned a 4-dimension vector; configured .* 3"):
         _embedder(_Server(length=4)).embed_documents(["sky"])

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from typing import Any
 
 import httpx2
 import pytest
@@ -13,31 +11,26 @@ from fake_server import keyed_settings
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server import MCPServer
-from omegaconf import DictConfig, OmegaConf
 from starlette.applications import Starlette
 
 from knowledge_base_config import Environment
 from knowledge_base_mcp_server.app import build_app
-from knowledge_base_mcp_server.configs.settings import McpServerSettings, get_settings
+from knowledge_base_mcp_server.configs.settings import get_settings
 from tools_knowledge_base.context import open_knowledge_base
-from tools_knowledge_base.registration import SUMMARY, register
+from tools_knowledge_base.registration import SUMMARY, Registered, register
 
-EXPECTED_TOOLS = sorted(
-    [
-        "get_memory_request",
-        "get_warmup_progress",
-        "search_memory",
-        "warmup_memory",
-        *(
-            f"{verb}_{kind}"
-            for kind in ("entity", "knowledge", "workflow")
-            for verb in ("store", "update", "get", "list", "delete")
-        ),
-    ]
-)
+EXPECTED_TOOLS = {
+    "get_memory_request",
+    "search_memory",
+    *(
+        f"{verb}_{kind}"
+        for kind in ("entity", "knowledge", "workflow")
+        for verb in ("store", "update", "get", "list", "delete")
+    ),
+}
 
 
-def _register_on_fakes(server: MCPServer) -> list[Callable[..., Any]]:
+def _register_on_fakes(server: MCPServer) -> Registered:
     """The real ``register``, keyed and on a fake embedder: no network, no key."""
     return register(
         server,
@@ -66,8 +59,9 @@ def test_the_endpoint_lists_every_knowledge_base_tool() -> None:
 
     init_text, listed = asyncio.run(_initialize_and_list(app, settings.path))
 
-    assert tool_names == EXPECTED_TOOLS
-    assert listed == EXPECTED_TOOLS
+    assert len(tool_names) == len(listed) == 17
+    assert set(tool_names) == EXPECTED_TOOLS
+    assert set(listed) == EXPECTED_TOOLS
     assert SUMMARY.split(":")[0] in init_text, "initialize must carry the summary"
 
 
@@ -80,23 +74,8 @@ def test_the_base_settings_serve_mcp_on_9799() -> None:
     assert (settings.port, settings.path) == (9799, "/mcp")
 
 
-def test_the_container_binds_every_interface() -> None:
-    """compose runs ``TOOLS_ENV=prod``: base plus any prod overlay, read straight from YAML.
-
-    The local and testing overlays both override ``host``, so only the files
-    themselves show what the container binds. On loopback, the published port
-    would be dead while the in-container healthcheck stayed green.
-    """
-    configs = McpServerSettings.yaml_directory
-    layers = [configs / "base" / "mcp_server.yaml", *sorted((configs / "prod").glob("*.yaml"))]
-    merged = OmegaConf.merge(*(OmegaConf.load(layer) for layer in layers))
-
-    assert isinstance(merged, DictConfig)
-    assert merged["host"] == "0.0.0.0"
-
-
 def test_a_server_run_on_the_host_binds_loopback_only() -> None:
-    """The base's 0.0.0.0 is for the container; on the host it would reach the LAN."""
+    """Bound to 0.0.0.0 the server would reach the LAN."""
     assert get_settings(Environment.LOCAL).host == "127.0.0.1"
 
 
@@ -132,7 +111,7 @@ async def _initialize_status(
     ("host", "status"),
     [
         ("localhost:9799", 200),
-        # compose publishes on ${KB_MCP_PORT:-9799}; a moved host port must still answer.
+        # A moved port must still answer.
         ("127.0.0.1:19799", 200),
         ("evil.example:9799", 421),
     ],

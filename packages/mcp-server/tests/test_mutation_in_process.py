@@ -61,10 +61,37 @@ def test_main_reads_the_tools_env_settings_by_default() -> None:
     def stdio(server: MCPServer) -> None:
         pytest.fail(f"served {server.name} over stdio: MCP_TRANSPORT is not pinned to http")
 
-    main(register_kb=register_nothing, run_stdio=stdio, run_http=serve)
+    main(
+        register_kb=register_nothing,
+        run_stdio=stdio,
+        run_http=serve,
+        require_key=lambda: None,
+    )
 
     testing = get_settings(Environment.TESTING)
     assert served == [(testing.host, testing.port)]
+
+
+@pytest.mark.parametrize("debug", [True, False])
+def test_the_modules_are_logged_after_serving_only_when_debug_modules_is_set(
+    caplog: pytest.LogCaptureFixture, *, debug: bool
+) -> None:
+    served: list[str] = []
+    settings = get_settings(Environment.TESTING).model_copy(
+        update={"transport": "stdio", "debug_modules": debug}
+    )
+
+    with caplog.at_level(logging.INFO, logger="knowledge_base_mcp_server"):
+        main(
+            settings=settings,
+            register_kb=register_nothing,
+            run_stdio=lambda s: served.append(s.name),
+            require_key=lambda: None,
+        )
+
+    lines = [m for m in caplog.messages if m.startswith("modules: ")]
+    assert served == ["knowledge_base"]
+    assert [",pytest," in line for line in lines] == ([True] if debug else [])
 
 
 def test_get_settings_defaults_to_the_tools_env_environment() -> None:

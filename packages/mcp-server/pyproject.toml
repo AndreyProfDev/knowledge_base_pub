@@ -1,29 +1,38 @@
 [project]
 name = "knowledge-base-mcp-server"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Serves the knowledge base's tools on its own MCP endpoint."
 readme = "README.md"
 requires-python = ">=3.12"
 
-# This list is what lands in the container: the knowledge base, its three kinds,
-# and the Qdrant store the container (TOOLS_ENV=prod) keeps its points in.
+# The default install: the knowledge base, its three kinds and the SQLite store.
 dependencies = [
     "knowledge-base-config",
     "mcp>=2,<3",
     "tools-knowledge-base[server]",
     "tools-knowledge-base-entity",
     "tools-knowledge-base-knowledge",
-    "tools-knowledge-base-qdrant",
+    "tools-knowledge-base-sqlite",
     "tools-knowledge-base-workflow",
     "uvicorn>=0.34",
 ]
+
+[project.optional-dependencies]
+# Another store, on demand: install the extra and set the vector store backend.
+lancedb = ["tools-knowledge-base-lancedb"]
+qdrant = ["tools-knowledge-base-qdrant"]
 
 [project.scripts]
 knowledge-base-mcp = "knowledge_base_mcp_server.app:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.1.0"
+raw-options = { root = "../.." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/knowledge_base_mcp_server"]

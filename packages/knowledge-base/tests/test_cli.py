@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 from cli_harness import cli_kb, invoke, item_id_in
 from fake_embedder import FakeEmbedder
-from fake_kb import stored
+from fake_kb import open_fake_kb, stored
+from fake_kind import FakeKind
+from warmup_harness import BoomEmbedder, warmup_settings
+from write_harness import submit_write
 
 from tools_knowledge_base.cli.main import main
 from tools_knowledge_base.context import KnowledgeBase
 from tools_knowledge_base.kinds.registry import load_kinds
 from tools_knowledge_base.operations import store_memory
-from tools_knowledge_base.queue import drain, enqueue_write
+from tools_knowledge_base.warmup_dump import dump_file_name
 
 
 def test_store_then_search_prints_the_item_with_its_score() -> None:
@@ -24,8 +26,7 @@ def test_store_then_search_prints_the_item_with_its_score() -> None:
     code, output = invoke(kb, "store-fake", "--title", "sky", "--tags", "blue", "--tags", "day")
     assert code == 0, output
     assert "request_id: " in output
-    assert "status: queued" in output
-    drain(kb.huey)
+    assert "status: done" in output
 
     code, output = invoke(kb, "search", "sky blue", "--kind", "fake", "--top-k", "1")
 
@@ -52,7 +53,7 @@ def test_search_kind_and_min_score_reach_the_search() -> None:
     stored(kb, "red apple")
     stored(kb, "blue ocean wave")
     store_memory(kb, "note", {"category": "fact", "text": "red apple"})
-    drain(kb.huey)
+    kb.writes.drain()
 
     _, every = invoke(kb, "search", "red apple", "--min-score", "-1")
     _, notes = invoke(kb, "search", "red apple", "--kind", "note", "--min-score", "-1")
@@ -67,7 +68,7 @@ def test_list_defaults_to_pages_of_50() -> None:
     kb = cli_kb()
     for i in range(51):
         store_memory(kb, "fake", {"title": f"item {i}", "tags": []})
-    drain(kb.huey)
+    kb.writes.drain()
 
     code, output = invoke(kb, "list", "fake")
 
@@ -94,11 +95,18 @@ def test_a_literal_field_is_a_choice_and_optional_or_defaulted_ones_may_be_left_
     assert "'fact', 'goal'" in output
 
     code, output = invoke(kb, "store-note", "--category", "goal", "--text", "ship it")
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert code == 0, output
     _, shown = invoke(kb, "get", "note", str(item_id_in(output)))
     assert "(goal) ship it via None #inbox  (updated " in shown
+
+
+def test_a_store_whose_write_fails_exits_1_with_the_error() -> None:
+    code, output = invoke(cli_kb(embedder=BoomEmbedder()), "store-fake", "--title", "boom")
+
+    assert code == 1
+    assert output == "Error: KnowledgeBaseError: embeddings server unreachable\n"
 
 
 def test_a_rejected_payload_exits_1_with_the_reason() -> None:
@@ -111,11 +119,11 @@ def test_a_rejected_payload_exits_1_with_the_reason() -> None:
 def test_update_prints_the_new_id_and_the_old_one_is_gone_after_the_worker() -> None:
     kb = cli_kb()
     _, stored = invoke(kb, "store-fake", "--title", "sky")
-    drain(kb.huey)
+    kb.writes.drain()
     old = item_id_in(stored)
 
     code, output = invoke(kb, "update-fake", str(old), "--title", "sky by day")
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert code == 0, output
     new = item_id_in(output)
@@ -125,18 +133,30 @@ def test_update_prints_the_new_id_and_the_old_one_is_gone_after_the_worker() -> 
     assert code == 0, output
     assert output.startswith(f"deleted fake {new}\nrequest_id: ")
     assert item_id_in(output) == new
-    assert "status: queued" in output
-    drain(kb.huey)
+    assert "status: done" in output
     request_id = re.findall(r"request_id: (\S+)", output)[0]
     assert invoke(kb, "request-status", request_id) == (0, "done\n")
     assert invoke(kb, "list", "fake") == (0, "")
+
+
+def test_delete_exits_nonzero_when_the_dump_file_could_not_be_removed(tmp_path: Path) -> None:
+    kb = open_fake_kb(FakeKind(), settings=warmup_settings(tmp_path))
+    item_id = stored(kb, "one").item_id
+    (tmp_path / dump_file_name("fake", item_id)).write_text("title: one\n", encoding="utf-8")
+
+    code, output = invoke(kb, "delete", "fake", str(item_id))
+
+    assert code == 1
+    assert "status: failed" in output
+    assert "WriteRefused" in output
+    assert "warmup.dump is off" in output
 
 
 def test_list_pages_with_the_printed_cursor() -> None:
     kb = cli_kb()
     for title in ("a", "b"):
         invoke(kb, "store-fake", "--title", title)
-    drain(kb.huey)
+    kb.writes.drain()
 
     _, first = invoke(kb, "list", "fake", "--limit", "1")
     match = re.search(r"next cursor: (\S+)", first)
@@ -150,18 +170,10 @@ def test_list_pages_with_the_printed_cursor() -> None:
 
 def test_request_status_prints_queued_done_or_failed_with_the_error() -> None:
     kb = cli_kb()
-    _, stored = invoke(kb, "store-fake", "--title", "sky")
-    request_id = re.findall(r"request_id: (\S+)", stored)[0]
+    request_id = submit_write(kb, uuid4(), {"title": "sky", "tags": []})
     assert invoke(kb, "request-status", request_id) == (0, "queued\n")
-    failing = enqueue_write(
-        kb.write_memory,
-        kind="uninstalled",
-        item_id=uuid4(),
-        payload={},
-        updated_at=datetime.now(UTC),
-        replaces=None,
-    )
-    drain(kb.huey)
+    failing = submit_write(kb, uuid4(), {}, kind="uninstalled")
+    kb.writes.drain()
 
     assert invoke(kb, "request-status", request_id) == (0, "done\n")
     code, output = invoke(kb, "request-status", failing)
@@ -182,7 +194,7 @@ def test_reembed_lists_the_too_long_and_exits_1_as_the_copy_is_incomplete(tmp_pa
     model_a = cli_kb(tmp_path, FakeEmbedder("fake-a"))
     invoke(model_a, "store-fake", "--title", "sky")
     _, long = invoke(model_a, "store-fake", "--title", "long", "--tags", "a", "--tags", "b")
-    assert drain(model_a.huey) == (2, 0)
+    model_a.writes.drain()
     model_b = cli_kb(tmp_path, FakeEmbedder("fake-b", max_input_tokens=2))
 
     code, output = invoke(model_b, "reembed", "--from", "memory-fake-a")
@@ -206,7 +218,7 @@ def test_main_opens_the_installed_kinds_on_the_overlay(capsys: pytest.CaptureFix
         main(["request-status", "unknown"])
 
     assert exit_info.value.code == 1
-    assert "no request 'unknown' was queued" in capsys.readouterr().err
+    assert "request unknown was not issued by this server process" in capsys.readouterr().err
 
 
 def test_main_reports_a_kind_that_fails_to_load_even_under_help(

@@ -1,6 +1,7 @@
 # knowledge-base-mcp-server
 
-Serves the knowledge base's tools from **one** MCP endpoint:
+Serves the knowledge base's tools from **one** MCP endpoint: stdio by default,
+or, with `MCP_TRANSPORT=http`:
 
 ```
 http://localhost:9799/mcp
@@ -8,8 +9,7 @@ http://localhost:9799/mcp
 
 For each installed kind (`entity`, `knowledge`, `workflow`): `store_<kind>`,
 `update_<kind>`, `get_<kind>`, `list_<kind>` and `delete_<kind>`; plus
-`search_memory`, `get_memory_request`, `warmup_memory` and
-`get_warmup_progress`.
+`search_memory` and `get_memory_request`.
 
 The port is published on loopback only — there is no auth. From another
 machine, tunnel: `ssh -L 9799:localhost:9799 <user>@<host>`.
@@ -31,20 +31,21 @@ look healthy and answer with no tools.
 
 ## Two transports
 
-| | `http` (default) | `stdio` |
+| | `http` | `stdio` (default) |
 | --- | --- | --- |
-| Who starts it | you, `make serve` | the client spawns it |
-| Shared between clients | yes, one container | no, one process each |
+| Who starts it | you | the client spawns it |
+| Shared between clients | yes, one process | no, one process each |
 | Needs a port / daemon | yes | no |
 
 ```bash
-uv run knowledge-base-mcp                      # http, on the host
-MCP_TRANSPORT=stdio uv run knowledge-base-mcp  # stdio, for a client to spawn
+uv run knowledge-base-mcp                      # stdio, for a client to spawn
+MCP_TRANSPORT=http uv run knowledge-base-mcp   # http, on the host
 ```
 
 `MCP_TRANSPORT` overrides the `transport` setting, because a client config can
-set env vars but not edit YAML. Writes are queued, so over stdio run
-`make kb-worker` alongside.
+set env vars but not edit YAML. Writes are queued in memory and worked by a thread
+of the server process itself; a write still queued when stdin closes is lost, and
+the server logs how many.
 
 ## Stable vs dev
 
@@ -54,7 +55,10 @@ takes the common `mcpServers` JSON format registers them as:
 ```json
 {
   "mcpServers": {
-    "knowledge_base": { "type": "http", "url": "http://localhost:9799/mcp" },
+    "knowledge_base": {
+      "command": "~/.local/share/knowledge-base-mcp/bin/knowledge-base-mcp",
+      "env": { "MCP_TRANSPORT": "stdio" }
+    },
     "knowledge_base-dev": {
       "command": "uv",
       "args": ["run", "knowledge-base-mcp"],
@@ -64,15 +68,18 @@ takes the common `mcpServers` JSON format registers them as:
 }
 ```
 
+(Use the absolute path of `INSTALL_VENV` for `knowledge_base`; a client may not
+expand `~`.)
+
 | | `knowledge_base` | `knowledge_base-dev` |
 | --- | --- | --- |
 | Registered in | the client's user-level config — every project | the client's project-level config — this repo only |
-| Runs | the built container (`make up`) | source in the checkout (`uv run`) |
-| Transport | http, `http://localhost:9799/mcp` | stdio |
-| `TOOLS_ENV` | `prod` (compose pins it) | unset, so `local` |
-| Store | Qdrant, volume `qdrant-storage` — the real memories | LanceDB under `data/lancedb` |
-| Writes | drained by the `knowledge-worker` container | pending in `data/knowledge-queue.db` until `make kb-worker` runs |
-| Affected by local edits | no, until `make build` then `make up` | immediately |
+| Runs | the installed venv (`make install-mcp`) | source in the checkout (`uv run`) |
+| Transport | stdio | stdio |
+| `TOOLS_ENV` | unset, so `local` | unset, so `local` |
+| Store | SQLite, `$KB_DATA_DIR/knowledge.sqlite3` — the real memories | SQLite under `data/dev` |
+| Writes | queued in memory, worked in-process | queued in memory, worked by the server's own thread |
+| Affected by local edits | no, until `make install-mcp` again | immediately |
 
 Without an embedder key (`OPEN_AI_API_KEY` in the shell or `.env`, or
 `KB_EMBEDDER=bge-m3`), `knowledge_base-dev` exits at startup with the reason on
@@ -85,6 +92,4 @@ registered.
 Settings live in `configs/base/mcp_server.yaml`: `host`, `port`, `path`, and
 `allowed_hosts` — the last matters because the SDK's DNS-rebinding protection
 rejects unexpected `Host` headers with `421 Misdirected Request`; it admits
-`localhost`/`127.0.0.1` on any port, so a moved `KB_MCP_PORT` still answers.
-The base binds `0.0.0.0` for the container; `configs/local/` (the host,
-`TOOLS_ENV` unset) binds `127.0.0.1`.
+`localhost`/`127.0.0.1` on any port. The base binds `127.0.0.1`.

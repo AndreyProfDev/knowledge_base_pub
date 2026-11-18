@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fake_embedder import FakeEmbedder
-from fake_kb import lancedb_settings, open_fake_kb, stored
+from fake_kb import lancedb_settings, open_fake_kb, sqlite_settings, stored
 from fake_kind import FakeKind, FakePayload
+from store_adapters import qdrant_settings
 
 from tools_knowledge_base.configs.settings import KnowledgeBaseSettings
 from tools_knowledge_base.context import KnowledgeBase
@@ -22,9 +24,16 @@ from tools_knowledge_base.operations import (
     search_memory,
     update_memory_item,
 )
-from tools_knowledge_base.queue import drain
+from tools_knowledge_base.reembed_journal import (
+    JOURNAL_NAME,
+    journal,
+    journal_path,
+    journaled,
+    open_journal,
+)
 from tools_knowledge_base.store.protocol import Point
 
+ID = UUID(int=1)
 KINDS = (FakeKind(), FakeKind("other"))
 SOURCE = "memory-fake-a"
 
@@ -107,7 +116,7 @@ def test_reembed_rerun_does_not_resurrect_an_item_deleted_between_runs(tmp_path:
     reembed_memory(model_b, SOURCE)
     delete_memory_item(model_b, "fake", gone.item_id)
     reworded = update_memory_item(model_b, "fake", old.item_id, {"title": "lawn", "tags": []})
-    drain(model_b.huey)
+    model_b.writes.drain()
 
     report = reembed_memory(model_b, SOURCE)
 
@@ -116,6 +125,48 @@ def test_reembed_rerun_does_not_resurrect_an_item_deleted_between_runs(tmp_path:
         kept.item_id,
         reworded.item_id,
     }
+
+
+def test_the_reembed_journal_survives_a_new_knowledge_base(tmp_path: Path) -> None:
+    settings = lancedb_settings(tmp_path)
+    stored(_model_a(settings), "sky", ["blue"])
+    first_run = _model_b(settings)
+    reembed_memory(first_run, SOURCE)
+    [item] = list_memory_items(first_run, "fake").items
+    delete_memory_item(first_run, "fake", item.id)
+
+    report = reembed_memory(_model_b(settings), SOURCE)
+
+    assert (report.copied, report.skipped_deleted) == (0, 1)
+    assert list_memory_items(first_run, "fake").items == []
+
+
+def test_the_journal_is_kept_per_active_collection(tmp_path: Path) -> None:
+    settings = lancedb_settings(tmp_path)
+    stored(_model_a(settings), "sky", ["blue"])
+    reembed_memory(_model_b(settings), SOURCE)
+    model_c = open_fake_kb(*KINDS, settings=settings, embedder=FakeEmbedder("fake-c", 8, 16))
+
+    report = reembed_memory(model_c, SOURCE)
+
+    assert (report.copied, report.skipped_deleted) == (1, 0)
+
+
+def test_the_journal_lives_beside_each_local_store(tmp_path: Path) -> None:
+    db = tmp_path / "kb" / "store.sqlite3"
+
+    assert journal_path(lancedb_settings(tmp_path)) == tmp_path / JOURNAL_NAME
+    assert journal_path(sqlite_settings(db)) == db.parent / JOURNAL_NAME
+    assert journal_path(qdrant_settings()) is None
+
+
+def test_an_in_memory_journal_is_per_connection() -> None:
+    with closing(open_journal(None)) as conn:
+        journal(conn, "src", [ID])
+        assert journaled(conn, "src", [ID]) == {ID}
+        assert journaled(conn, "other", [ID]) == set()
+    with closing(open_journal(None)) as conn:
+        assert journaled(conn, "src", [ID]) == set()
 
 
 def test_reembed_rerun_does_not_resurrect_an_item_present_before_the_first_run(

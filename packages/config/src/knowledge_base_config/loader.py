@@ -4,21 +4,22 @@ Each package ships its own ``get_settings(env)`` that calls :func:`load_settings
 once. Layers merge lowest-to-highest: ``<yaml_directory>/base/*.yaml`` then
 ``<yaml_directory>/<env>/*.yaml``. Within a layer, files merge in sorted order.
 
-In the LOCAL environment ``find_dotenv`` walks up for a ``.env`` and loads it
-with ``override=False`` so an exported shell variable always wins.
+In the LOCAL environment ``<kb_data_dir>/.env`` (by absolute path, never the
+cwd's) is loaded when it exists, with ``override=False`` so an exported shell
+variable always wins.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 from omegaconf.errors import InterpolationResolutionError
 
 from knowledge_base_config.base_settings import BaseSettings
 from knowledge_base_config.environment import Environment
-from knowledge_base_config.resolvers import SecretNotFoundError, register_resolvers
+from knowledge_base_config.resolvers import SecretNotFoundError, kb_data_dir, register_resolvers
 
 
 def load_settings[T: BaseSettings](cls: type[T], *, env: Environment) -> T:
@@ -57,9 +58,9 @@ def _resolve(merged: DictConfig) -> object:
 
 
 def _maybe_load_dotenv() -> None:
-    dotenv_path = find_dotenv(usecwd=True)
-    if dotenv_path:
-        load_dotenv(dotenv_path)
+    dotenv_path = Path(kb_data_dir()) / ".env"
+    if dotenv_path.is_file():
+        load_dotenv(dotenv_path)  # python-dotenv's default never overrides the real environment
 
 
 def _merge_yaml_layers(yaml_directory: Path, env: Environment) -> DictConfig:

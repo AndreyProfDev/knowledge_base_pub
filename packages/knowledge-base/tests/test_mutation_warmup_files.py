@@ -1,4 +1,4 @@
-"""Warm-up file errors carry their exact message, input and title; progress hides inputs."""
+"""Warm-up file errors carry their exact message, input and title."""
 
 from __future__ import annotations
 
@@ -12,11 +12,8 @@ from pydantic import ValidationError
 from warmup_harness import warmup_settings, write_yaml
 
 from tools_knowledge_base.context import KnowledgeBase
-from tools_knowledge_base.errors import StoredItemInvalid
-from tools_knowledge_base.operations import get_warmup_progress
 from tools_knowledge_base.operations.store import item_id_of
 from tools_knowledge_base.operations.warmup_files import load_warmup_items
-from tools_knowledge_base.queue import put_value
 from tools_knowledge_base.warmup_dump import dump_file_name
 
 
@@ -89,18 +86,3 @@ def test_an_identical_copy_with_a_non_json_field_is_not_shadowed(tmp_path: Path)
 
     assert [item.file for item in files.items] == [dump_file_name("fake", item_id)]
     assert files.shadowed == []
-
-
-def test_a_run_record_of_the_wrong_shape_lists_errors_without_inputs_or_links(
-    tmp_path: Path,
-) -> None:
-    kb = open_fake_kb(settings=warmup_settings(tmp_path))
-    put_value(kb.huey, "warmup:run-1", '{"requests": "secret", "unchanged": 0}')
-
-    with pytest.raises(StoredItemInvalid) as caught:
-        get_warmup_progress(kb, "run-1")
-
-    assert str(caught.value) == (
-        "warm-up run 'run-1''s record: [{'type': 'list_type', 'loc': ('requests',), "
-        "'msg': 'Input should be a valid array'}]"
-    )

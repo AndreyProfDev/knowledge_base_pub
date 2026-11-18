@@ -1,3 +1,0 @@
-# Local overlay: on the host, not in a container, so loopback only.
-
-host: 127.0.0.1

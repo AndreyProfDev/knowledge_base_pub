@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 from collections.abc import Sequence
 from datetime import datetime
+from typing import override
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -82,3 +83,23 @@ class RefusingStore:
         min_score: float | None,
     ) -> builtins.list[Hit]:
         return self.inner.search(vector, kinds=kinds, limit=limit, min_score=min_score)
+
+
+class DeleteFailingOnceStore(RefusingStore):
+    """``inner``, but its first ``delete`` raises."""
+
+    def __init__(self, inner: VectorStore) -> None:
+        super().__init__(inner)
+        self.deletes = 0
+
+    @override
+    def upsert(self, points: Sequence[Point]) -> None:
+        self.inner.upsert(points)
+
+    @override
+    def delete(self, ids: Sequence[UUID], *, older_than: datetime | None = None) -> None:
+        self.deletes += 1
+        if self.deletes == 1:
+            msg = "vector store unreachable"
+            raise OSError(msg)
+        self.inner.delete(ids, older_than=older_than)

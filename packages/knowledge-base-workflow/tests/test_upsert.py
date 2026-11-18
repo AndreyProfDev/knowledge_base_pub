@@ -12,17 +12,16 @@ from tools_knowledge_base.operations import (
     store_memory,
     update_memory_item,
 )
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base_workflow.kind import WorkflowKind, WorkflowPayload
 
 
 def test_the_same_name_overwrites_description_and_steps_in_place() -> None:
     kb = open_fake_kb(WorkflowKind())
     first = store_memory(kb, "workflow", {"name": "deploy", "description": "old", "steps": ["a"]})
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
 
     again = store_memory(kb, "workflow", {"name": "deploy", "steps": ["b", "c"]})
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
 
     assert again.item_id == first.item_id
     assert [item.payload for item in list_memory_items(kb, "workflow").items] == [
@@ -33,10 +32,10 @@ def test_the_same_name_overwrites_description_and_steps_in_place() -> None:
 def test_an_update_that_renames_the_workflow_moves_the_item() -> None:
     kb = open_fake_kb(WorkflowKind())
     first = store_memory(kb, "workflow", {"name": "deploy", "steps": ["a"]})
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
 
     moved = update_memory_item(kb, "workflow", first.item_id, {"name": "ship", "steps": ["a"]})
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
 
     assert moved.item_id != first.item_id
     assert get_memory_item(kb, "workflow", moved.item_id).payload == WorkflowPayload(

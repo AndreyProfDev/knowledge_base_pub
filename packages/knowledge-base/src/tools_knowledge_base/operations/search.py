@@ -42,6 +42,8 @@ def search_memory(
         pydantic.ValidationError: ``query`` is blank, ``top_k`` is outside
             ``1..MAX_LIMIT``, or ``min_score`` is not finite.
         UnknownKind: ``kind`` is set and no installed kind has that name.
+        KnowledgeBaseError: the store refuses the embedded query: its dimension does not
+            fit the collection, or it has zero or non-finite length.
         StoredItemInvalid: a hit's stored payload fails its kind's model.
     """
     try:

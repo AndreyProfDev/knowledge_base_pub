@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+import threading
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 from uuid import UUID
@@ -11,7 +12,9 @@ from uuid import UUID
 import yaml
 from pydantic import JsonValue
 
-from tools_knowledge_base.errors import WarmupDumpFailed
+from tools_knowledge_base.errors import WarmupDumpFailed, stored_as
+from tools_knowledge_base.kinds.registry import KindRegistry
+from tools_knowledge_base.store.protocol import Point, VectorStore
 
 
 def dump_file_name(kind: str, item_id: UUID) -> str:
@@ -26,9 +29,7 @@ def write_dump(root: Path, kind: str, item_id: UUID, payload: Mapping[str, JsonV
         WarmupDumpFailed: the directory or file cannot be written.
     """
     name = dump_file_name(kind, item_id)
-    # A dotfile, so a crash leaving it behind is skipped by warm-up. One temp name per item
-    # is safe only while huey runs a single worker (``queue.run_consumer`` pins it).
-    temp = root / f".{name}.tmp"
+    temp = _temp_path(root, name)
     text = _dump_text(kind, payload)
     try:
         root.mkdir(parents=True, exist_ok=True)
@@ -42,6 +43,12 @@ def write_dump(root: Path, kind: str, item_id: UUID, payload: Mapping[str, JsonV
     except OSError as exc:
         msg = f"cannot write dump file {root / name}: {exc}"
         raise WarmupDumpFailed(msg) from exc
+
+
+def _temp_path(root: Path, name: str) -> Path:
+    # A dotfile, so a crash leaving it behind is skipped by warm-up. Unique per process and
+    # thread: several conversation processes write the same item's file concurrently.
+    return root / f".{name}.{os.getpid()}.{threading.get_ident()}.tmp"
 
 
 def _dump_text(kind: str, payload: Mapping[str, JsonValue]) -> str:
@@ -84,6 +91,42 @@ def remove_dump(root: Path, kind: str, item_id: UUID) -> None:
     except OSError as exc:
         msg = f"cannot remove dump file {path}: {exc}"
         raise WarmupDumpFailed(msg) from exc
+
+
+def sync_dump(
+    store: VectorStore, root: Path, kinds: KindRegistry, kind: str, item_id: UUID
+) -> None:
+    """Make the dump file mirror the store's copy of ``item_id`` now, or absent with it."""
+    # The one dump rule: not the task's payload: an older write the store refused, or an
+    # item deleted since, would be restored. Idempotent, so a retry or a forget in any
+    # order converges.
+    held = [item for item in store.get([item_id]) if item.kind == kind]
+    if not held:
+        remove_dump(root, kind, item_id)
+        return
+    model = stored_as(kinds.get(kind).payload_model, held[0].payload, f"{kind} item {item_id}")
+    write_dump(root, kind, item_id, model.model_dump(mode="json"))
+
+
+def upsert_and_sync_dump(
+    store: VectorStore,
+    root: Path | None,
+    kinds: KindRegistry,
+    kind: str,
+    points: Sequence[Point],
+    on_upserted: Callable[[], None] | None = None,
+) -> None:
+    """Upsert ``points`` of ``kind``, call ``on_upserted`` if given, then sync their dump files.
+
+    ``root`` None leaves the files alone (``warmup.dump`` off).
+    """
+    # Upsert before dump, so a write that never lands is never dumped.
+    store.upsert(points)
+    if on_upserted is not None:
+        on_upserted()
+    if root is not None:
+        for point in points:
+            sync_dump(store, root, kinds, kind, point.id)
 
 
 def _fsync_dir(root: Path) -> None:

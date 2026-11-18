@@ -1,7 +1,7 @@
 [project]
 name = "knowledge-base-workspace"
 version = "0.1.0"
-description = "A personal knowledge base of typed memories: core library, kind and vector-store plugins, REST API, MCP server and UI."
+description = "A personal knowledge base of typed memories: core library, kind and vector-store plugins, MCP server and CLI."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,11 +9,11 @@ dependencies = [
     "knowledge-base-mcp-server",
     # [server] pulls in the MCP SDK the knowledge base's MCP tools are built on.
     "tools-knowledge-base[server]",
-    "tools-knowledge-base-api",
     "tools-knowledge-base-entity",
     "tools-knowledge-base-knowledge",
     "tools-knowledge-base-lancedb",
     "tools-knowledge-base-qdrant",
+    "tools-knowledge-base-sqlite",
     "tools-knowledge-base-workflow",
 ]
 
@@ -22,18 +22,16 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/*"]
-# An npm package: uv rejects a member without a pyproject.toml.
-exclude = ["packages/knowledge-base-ui"]
 
 [tool.uv.sources]
 knowledge-base-config = { workspace = true }
 knowledge-base-mcp-server = { workspace = true }
 tools-knowledge-base = { workspace = true }
-tools-knowledge-base-api = { workspace = true }
 tools-knowledge-base-entity = { workspace = true }
 tools-knowledge-base-knowledge = { workspace = true }
 tools-knowledge-base-lancedb = { workspace = true }
 tools-knowledge-base-qdrant = { workspace = true }
+tools-knowledge-base-sqlite = { workspace = true }
 tools-knowledge-base-workflow = { workspace = true }
 
 [dependency-groups]
@@ -58,11 +56,11 @@ target-version = "py312"
 src = [
     "packages/config/src",
     "packages/knowledge-base/src",
-    "packages/knowledge-base-api/src",
     "packages/knowledge-base-entity/src",
     "packages/knowledge-base-knowledge/src",
     "packages/knowledge-base-lancedb/src",
     "packages/knowledge-base-qdrant/src",
+    "packages/knowledge-base-sqlite/src",
     "packages/knowledge-base-workflow/src",
     "packages/mcp-server/src",
 ]
@@ -128,6 +126,9 @@ ignore = [
     "S603",  # spawns sys.executable on this repo's own module: a fixed argv, no shell,
              # and a literal environment
 ]
+"packages/knowledge-base/tests/test_warmup_dump_concurrent.py" = [
+    "S603",  # spawns sys.executable on an inline script: a fixed argv, no shell
+]
 "scripts/*" = [
     "T201",   # standalone report scripts print by design
     "INP001", # not a package
@@ -177,13 +178,6 @@ reportPrivateUsage = "none"
 reportUnusedParameter = "none"
 
 [[tool.basedpyright.executionEnvironments]]
-root = "packages/knowledge-base-api/tests"
-extraPaths = ["packages/knowledge-base/tests"]
-reportImplicitRelativeImport = "none"
-reportPrivateUsage = "none"
-reportUnusedParameter = "none"
-
-[[tool.basedpyright.executionEnvironments]]
 root = "packages/knowledge-base-entity/tests"
 extraPaths = ["packages/knowledge-base/tests"]
 reportImplicitRelativeImport = "none"
@@ -212,6 +206,13 @@ reportPrivateUsage = "none"
 reportUnusedParameter = "none"
 
 [[tool.basedpyright.executionEnvironments]]
+root = "packages/knowledge-base-sqlite/tests"
+extraPaths = ["packages/knowledge-base/tests"]
+reportImplicitRelativeImport = "none"
+reportPrivateUsage = "none"
+reportUnusedParameter = "none"
+
+[[tool.basedpyright.executionEnvironments]]
 root = "packages/knowledge-base-workflow/tests"
 extraPaths = ["packages/knowledge-base/tests"]
 reportImplicitRelativeImport = "none"
@@ -232,11 +233,11 @@ branch = true
 source = [
     "packages/config/src",
     "packages/knowledge-base/src",
-    "packages/knowledge-base-api/src",
     "packages/knowledge-base-entity/src",
     "packages/knowledge-base-knowledge/src",
     "packages/knowledge-base-lancedb/src",
     "packages/knowledge-base-qdrant/src",
+    "packages/knowledge-base-sqlite/src",
     "packages/knowledge-base-workflow/src",
     "packages/mcp-server/src",
 ]
@@ -265,6 +266,9 @@ norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules"
 addopts = "-q --import-mode=importlib"
 consider_namespace_packages = true
 # The core package's fakes (fake_kb, fake_server, ...) are shared by every plugin's tests.
-pythonpath = ["packages/knowledge-base/tests"]
+# The sqlite tests' job module is on it too, so a fork server's children can import it by name.
+pythonpath = ["packages/knowledge-base/tests", "packages/knowledge-base-sqlite/tests"]
 # MCP_TRANSPORT pinned so a shell that exports it cannot flip the transport tests.
-env = ["TOOLS_ENV=testing", "MCP_TRANSPORT=http"]
+# KB_DATA_DIR names a directory that cannot exist, so a test that opens the raw testing
+# overlay's store (instead of one from a settings seam) fails loudly, never writes to disk.
+env = ["TOOLS_ENV=testing", "MCP_TRANSPORT=http", "KB_DATA_DIR=/nonexistent/kb-testing"]

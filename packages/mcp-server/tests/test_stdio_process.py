@@ -1,4 +1,4 @@
-"""The real process over stdio: the handshake a client does, and the exit without a key.
+"""The real process over stdio: the handshake, the first keyless call, the modules imported.
 
 Each test spawns the installed ``knowledge-base-mcp`` console script with a
 literal environment, so what is asserted is the entry point a client config
@@ -15,19 +15,15 @@ from pathlib import Path
 import pytest
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
-EXPECTED_TOOLS = sorted(
-    [
-        "get_memory_request",
-        "get_warmup_progress",
-        "search_memory",
-        "warmup_memory",
-        *(
-            f"{verb}_{kind}"
-            for kind in ("entity", "knowledge", "workflow")
-            for verb in ("store", "update", "get", "list", "delete")
-        ),
-    ]
-)
+EXPECTED_TOOLS = {
+    "get_memory_request",
+    "search_memory",
+    *(
+        f"{verb}_{kind}"
+        for kind in ("entity", "knowledge", "workflow")
+        for verb in ("store", "update", "get", "list", "delete")
+    ),
+}
 
 # The venv's scripts sit beside its interpreter; not resolved, as that would
 # follow the interpreter symlink out of the venv.
@@ -69,17 +65,62 @@ def _run(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 
 
 def test_stdio_handshake_lists_every_knowledge_base_tool() -> None:
-    assert asyncio.run(_bounded_handshake()) == ["knowledge_base", *EXPECTED_TOOLS]
+    name, *tools = asyncio.run(_bounded_handshake())
+
+    assert name == "knowledge_base"
+    assert len(tools) == 17
+    assert set(tools) == EXPECTED_TOOLS
 
 
-def test_an_unset_embedder_key_exits_non_zero_naming_the_key() -> None:
-    """The testing overlay leaves openai-small's key empty, so this is the unset case."""
-    done = _run({"TOOLS_ENV": "testing", "MCP_TRANSPORT": "stdio"})
+def test_an_unset_embedder_key_fails_the_start(tmp_path: Path) -> None:
+    """The testing overlay blanks the default openai-large key: the start names it and the .env."""
+    env = {"TOOLS_ENV": "testing", "MCP_TRANSPORT": "stdio", "KB_DATA_DIR": str(tmp_path)}
+
+    done = _run(env)
 
     assert done.returncode != 0
-    assert "OPEN_AI_API_KEY" in done.stderr, done.stderr
-    # stdout is the JSON-RPC channel on stdio: the startup log must never reach it.
-    assert "did not register" not in done.stdout, done.stdout
+    assert "OPEN_AI_API_KEY" in done.stderr
+    assert f"{tmp_path}/.env" in done.stderr
+    assert done.stdout == ""
+
+
+_HEAVY = ("openai", "tiktoken", "tokenizers", "numpy", "qdrant_client", "lancedb")
+
+
+def _modules_after(tmp_path: Path, *, list_knowledge: bool) -> set[str]:
+    """Run one stdio session; the modules the server logged as it ended."""
+    log = tmp_path / "stderr.log"
+    env = {**_KEYLESS, "KB_DATA_DIR": str(tmp_path), "KB_DEBUG_MODULES": "true"}
+
+    async def session() -> None:
+        with log.open("w") as errlog:
+            params = StdioServerParameters(command=_SCRIPT, env=env)
+            async with (
+                stdio_client(params, errlog=errlog) as (read, write),
+                ClientSession(read, write) as client,
+            ):
+                await client.initialize()
+                await client.list_tools()
+                if list_knowledge:
+                    listed = await client.call_tool("list_knowledge", {})
+                    assert not listed.is_error, listed
+
+    asyncio.run(asyncio.wait_for(session(), timeout=30))
+    [line] = [x for x in log.read_text().splitlines() if "modules: " in x]
+    return set(line.split("modules: ", 1)[1].split(","))
+
+
+def test_nothing_heavy_is_imported_after_tools_list(tmp_path: Path) -> None:
+    modules = _modules_after(tmp_path, list_knowledge=False)
+
+    assert "mcp" in modules
+    assert not {m for m in modules if m.split(".")[0] in _HEAVY}
+
+
+def test_a_list_call_still_imports_no_embedder_client(tmp_path: Path) -> None:
+    modules = _modules_after(tmp_path, list_knowledge=True)
+
+    assert "openai" not in modules
 
 
 @pytest.mark.parametrize(
@@ -96,8 +137,8 @@ def test_the_log_level_setting_decides_whether_the_serving_line_shows(
     assert ("serving" in done.stderr) is shown, done.stderr
 
 
-def test_with_mcp_transport_unset_the_base_transport_is_http() -> None:
-    """compose sets no MCP_TRANSPORT and pytest's env pins it, so only a child can show this."""
+def test_with_mcp_transport_unset_the_base_transport_is_stdio() -> None:
+    """no deployment sets MCP_TRANSPORT and pytest's env pins it, so only a child can show this."""
     done = subprocess.run(
         [
             sys.executable,
@@ -114,4 +155,4 @@ def test_with_mcp_transport_unset_the_base_transport_is_http() -> None:
     )
 
     assert done.returncode == 0, done.stderr
-    assert done.stdout.strip() == "http"
+    assert done.stdout.strip() == "stdio"

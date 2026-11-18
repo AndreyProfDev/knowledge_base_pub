@@ -14,21 +14,12 @@ members = [
     "knowledge-base-mcp-server",
     "knowledge-base-workspace",
     "tools-knowledge-base",
-    "tools-knowledge-base-api",
     "tools-knowledge-base-entity",
     "tools-knowledge-base-knowledge",
     "tools-knowledge-base-lancedb",
     "tools-knowledge-base-qdrant",
+    "tools-knowledge-base-sqlite",
     "tools-knowledge-base-workflow",
-]
-
-[[package]]
-name = "annotated-doc"
-version = "0.0.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5a/8e/38aa427ed5402449e226975b649c5dc73ccadfefeb95e6aecb8f8ea4b6b6/annotated_doc-0.0.5.tar.gz", hash = "sha256:c7e58ce09192557605d8bbd92836d7e1d520ac9580096042c0bfd197efacf1bb", size = 10758, upload-time = "2026-07-28T13:50:58.129Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/30/e900b21425a860e195f32e37657aa1f7c7f2b1bfb26f03ca209b90933c06/annotated_doc-0.0.5-py3-none-any.whl", hash = "sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101", size = 5302, upload-time = "2026-07-28T13:50:57.239Z" },
 ]
 
 [[package]]
@@ -510,23 +501,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastapi"
-version = "0.143.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "annotated-doc" },
-    { name = "opentelemetry-api" },
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/38/d5/b0aeb0b303650ac87b0411de4aaf3f901b06042dcc3fb00f30b97b7ff585/fastapi-0.143.3.tar.gz", hash = "sha256:b9ab567ee57afb4454004ce04c889f8f0160ac47946b99795887cd6e88484848", size = 469834, upload-time = "2026-10-16T14:14:13.31Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/1a/03d246befcf307219bb2161c97d8c5d314f84125bf7dd245730a28589828/fastapi-0.143.3-py3-none-any.whl", hash = "sha256:75e8bd68e2f52f77d29b2879749c257d64de2d85282d25270caf2bfccce5efe5", size = 144849, upload-time = "2026-10-16T14:14:11.763Z" },
-]
-
-[[package]]
 name = "filelock"
 version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -723,15 +697,6 @@ wheels = [
 ]
 
 [[package]]
-name = "huey"
-version = "3.4.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/57/25/1281d8f3febc30b5facbfc5e4163447241711591c094dac642d32c827eb0/huey-3.4.0.tar.gz", hash = "sha256:ac9b02e741f13da4092ea19bcaafc73669e97d3153914d2fed2868df144f6dfa", size = 630013, upload-time = "2026-09-04T02:04:34.521Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/31/cee585bd4d1e39947a426a6736f4e17d22b454952370fb9cf48eb3103085/huey-3.4.0-py3-none-any.whl", hash = "sha256:d0580762397744026f83baae5f2b97a62474a62b8565ac75bbafefe72f9c784f", size = 136493, upload-time = "2026-09-04T02:04:32.848Z" },
-]
-
-[[package]]
 name = "huggingface-hub"
 version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -902,7 +867,6 @@ wheels = [
 
 [[package]]
 name = "knowledge-base-config"
-version = "0.1.0"
 source = { editable = "packages/config" }
 dependencies = [
     { name = "omegaconf" },
@@ -919,7 +883,6 @@ requires-dist = [
 
 [[package]]
 name = "knowledge-base-mcp-server"
-version = "0.1.0"
 source = { editable = "packages/mcp-server" }
 dependencies = [
     { name = "knowledge-base-config" },
@@ -927,9 +890,17 @@ dependencies = [
     { name = "tools-knowledge-base", extra = ["server"] },
     { name = "tools-knowledge-base-entity" },
     { name = "tools-knowledge-base-knowledge" },
-    { name = "tools-knowledge-base-qdrant" },
+    { name = "tools-knowledge-base-sqlite" },
     { name = "tools-knowledge-base-workflow" },
     { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+lancedb = [
+    { name = "tools-knowledge-base-lancedb" },
+]
+qdrant = [
+    { name = "tools-knowledge-base-qdrant" },
 ]
 
 [package.metadata]
@@ -939,10 +910,13 @@ requires-dist = [
     { name = "tools-knowledge-base", extras = ["server"], editable = "packages/knowledge-base" },
     { name = "tools-knowledge-base-entity", editable = "packages/knowledge-base-entity" },
     { name = "tools-knowledge-base-knowledge", editable = "packages/knowledge-base-knowledge" },
-    { name = "tools-knowledge-base-qdrant", editable = "packages/knowledge-base-qdrant" },
+    { name = "tools-knowledge-base-lancedb", marker = "extra == 'lancedb'", editable = "packages/knowledge-base-lancedb" },
+    { name = "tools-knowledge-base-qdrant", marker = "extra == 'qdrant'", editable = "packages/knowledge-base-qdrant" },
+    { name = "tools-knowledge-base-sqlite", editable = "packages/knowledge-base-sqlite" },
     { name = "tools-knowledge-base-workflow", editable = "packages/knowledge-base-workflow" },
     { name = "uvicorn", specifier = ">=0.34" },
 ]
+provides-extras = ["lancedb", "qdrant"]
 
 [[package]]
 name = "knowledge-base-workspace"
@@ -952,11 +926,11 @@ dependencies = [
     { name = "knowledge-base-config" },
     { name = "knowledge-base-mcp-server" },
     { name = "tools-knowledge-base", extra = ["server"] },
-    { name = "tools-knowledge-base-api" },
     { name = "tools-knowledge-base-entity" },
     { name = "tools-knowledge-base-knowledge" },
     { name = "tools-knowledge-base-lancedb" },
     { name = "tools-knowledge-base-qdrant" },
+    { name = "tools-knowledge-base-sqlite" },
     { name = "tools-knowledge-base-workflow" },
 ]
 
@@ -978,11 +952,11 @@ requires-dist = [
     { name = "knowledge-base-config", editable = "packages/config" },
     { name = "knowledge-base-mcp-server", editable = "packages/mcp-server" },
     { name = "tools-knowledge-base", extras = ["server"], editable = "packages/knowledge-base" },
-    { name = "tools-knowledge-base-api", editable = "packages/knowledge-base-api" },
     { name = "tools-knowledge-base-entity", editable = "packages/knowledge-base-entity" },
     { name = "tools-knowledge-base-knowledge", editable = "packages/knowledge-base-knowledge" },
     { name = "tools-knowledge-base-lancedb", editable = "packages/knowledge-base-lancedb" },
     { name = "tools-knowledge-base-qdrant", editable = "packages/knowledge-base-qdrant" },
+    { name = "tools-knowledge-base-sqlite", editable = "packages/knowledge-base-sqlite" },
     { name = "tools-knowledge-base-workflow", editable = "packages/knowledge-base-workflow" },
 ]
 
@@ -2352,11 +2326,9 @@ wheels = [
 
 [[package]]
 name = "tools-knowledge-base"
-version = "0.1.0"
 source = { editable = "packages/knowledge-base" }
 dependencies = [
     { name = "click" },
-    { name = "huey" },
     { name = "knowledge-base-config" },
     { name = "openai" },
     { name = "pydantic" },
@@ -2374,7 +2346,6 @@ server = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
-    { name = "huey", specifier = ">=3.4,<4" },
     { name = "knowledge-base-config", editable = "packages/config" },
     { name = "mcp", marker = "extra == 'server'", specifier = ">=2,<3" },
     { name = "openai", specifier = ">=3.31,<4" },
@@ -2387,27 +2358,7 @@ requires-dist = [
 provides-extras = ["server"]
 
 [[package]]
-name = "tools-knowledge-base-api"
-version = "0.1.0"
-source = { editable = "packages/knowledge-base-api" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "knowledge-base-config" },
-    { name = "tools-knowledge-base" },
-    { name = "uvicorn" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.143" },
-    { name = "knowledge-base-config", editable = "packages/config" },
-    { name = "tools-knowledge-base", editable = "packages/knowledge-base" },
-    { name = "uvicorn", specifier = ">=0.34" },
-]
-
-[[package]]
 name = "tools-knowledge-base-entity"
-version = "0.1.0"
 source = { editable = "packages/knowledge-base-entity" }
 dependencies = [
     { name = "pydantic" },
@@ -2422,7 +2373,6 @@ requires-dist = [
 
 [[package]]
 name = "tools-knowledge-base-knowledge"
-version = "0.1.0"
 source = { editable = "packages/knowledge-base-knowledge" }
 dependencies = [
     { name = "pydantic" },
@@ -2437,7 +2387,6 @@ requires-dist = [
 
 [[package]]
 name = "tools-knowledge-base-lancedb"
-version = "0.1.0"
 source = { editable = "packages/knowledge-base-lancedb" }
 dependencies = [
     { name = "lancedb" },
@@ -2454,7 +2403,6 @@ requires-dist = [
 
 [[package]]
 name = "tools-knowledge-base-qdrant"
-version = "0.1.0"
 source = { editable = "packages/knowledge-base-qdrant" }
 dependencies = [
     { name = "qdrant-client" },
@@ -2468,8 +2416,17 @@ requires-dist = [
 ]
 
 [[package]]
+name = "tools-knowledge-base-sqlite"
+source = { editable = "packages/knowledge-base-sqlite" }
+dependencies = [
+    { name = "tools-knowledge-base" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tools-knowledge-base", editable = "packages/knowledge-base" }]
+
+[[package]]
 name = "tools-knowledge-base-workflow"
-version = "0.1.0"
 source = { editable = "packages/knowledge-base-workflow" }
 dependencies = [
     { name = "pydantic" },

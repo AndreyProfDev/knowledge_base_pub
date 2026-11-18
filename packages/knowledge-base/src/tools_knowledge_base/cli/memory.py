@@ -13,10 +13,11 @@ import click
 from pydantic import BaseModel
 
 from tools_knowledge_base.cli.context import CliContext
+from tools_knowledge_base.cli.written import echo_accepted, echo_written
 from tools_knowledge_base.context import KnowledgeBase
 from tools_knowledge_base.kinds.protocol import MemoryKind
 from tools_knowledge_base.kinds.registry import KindRegistry
-from tools_knowledge_base.models import MemoryItem, WriteAccepted
+from tools_knowledge_base.models import MemoryItem
 from tools_knowledge_base.operations import (
     MAX_LIMIT,
     delete_memory_item,
@@ -33,12 +34,6 @@ from tools_knowledge_base.operations import (
 
 def _line(kb: KnowledgeBase, item: MemoryItem) -> str:
     return f"{item.kind}  {item.id}  {kb.kinds.get(item.kind).render(item.payload)}"
-
-
-def _echo_accepted(accepted: WriteAccepted) -> None:
-    click.echo(f"request_id: {accepted.request_id}")
-    click.echo(f"item_id: {accepted.item_id}")
-    click.echo(f"status: {accepted.status}")
 
 
 def _payload_options(model: type[BaseModel]) -> list[click.Parameter]:
@@ -84,7 +79,8 @@ def store_command(kind: MemoryKind) -> click.Command:
 
     @click.pass_obj
     def store(obj: CliContext, **values: object) -> None:
-        _echo_accepted(store_memory(obj.kb(), kind.name, _payload(kind.payload_model, values)))
+        kb = obj.kb()
+        echo_written(kb, store_memory(kb, kind.name, _payload(kind.payload_model, values)))
 
     return click.Command(
         f"store-{kind.name}",
@@ -100,7 +96,8 @@ def update_command(kind: MemoryKind) -> click.Command:
     @click.pass_obj
     def update(obj: CliContext, item_id: UUID, **values: object) -> None:
         payload = _payload(kind.payload_model, values)
-        _echo_accepted(update_memory_item(obj.kb(), kind.name, item_id, payload))
+        kb = obj.kb()
+        echo_written(kb, update_memory_item(kb, kind.name, item_id, payload))
 
     id_name = "item_id"  # pragma: no mutate, equivalent: click lowercases argument names
     item = click.Argument([id_name], type=click.UUID, metavar="ID")
@@ -181,10 +178,14 @@ def item_commands(kinds: KindRegistry) -> list[click.Command]:
     @id_argument
     @click.pass_obj
     def delete(obj: CliContext, kind: str, item_id: UUID) -> None:
-        """Delete item ID of KIND; its dump file goes by a queued request."""
-        accepted = delete_memory_item(obj.kb(), kind, item_id)
+        """Delete item ID of KIND and its dump file."""
+        kb = obj.kb()
+        accepted = delete_memory_item(kb, kind, item_id)
         click.echo(f"deleted {kind} {item_id}")
-        _echo_accepted(accepted)
+        echo_accepted(accepted)
+        if accepted.status == "failed":
+            # The item is gone but its dump file stayed: warm-up can bring it back.
+            raise click.ClickException(get_memory_request(kb, accepted.request_id).error or "")
 
     return [get, list_items, delete]
 

@@ -63,11 +63,8 @@ def test_the_generic_tool_descriptions_word_for_word() -> None:
     )
     assert _description(listed, "get_memory_request") == (
         "Report a queued request by the `request_id` a store, update or delete returned: "
-        "`queued` until the worker has run it, then `done`, or `failed` with the error."
+        "`queued` until this server has run it, then `done`, or `failed` with the error."
     )
-    warmup = _description(listed, "warmup_memory")
-    assert warmup.startswith("Queue every item in the server's warm-up directory of YAML")
-    assert warmup.endswith("Poll get_warmup_progress with the `run_id`.")
 
 
 def test_search_types_its_query_and_min_score() -> None:

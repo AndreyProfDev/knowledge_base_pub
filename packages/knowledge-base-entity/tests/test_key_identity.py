@@ -32,8 +32,8 @@ def test_each_type_is_accepted_and_keyed_apart(entity_type: str) -> None:
 def test_names_differing_only_in_case_are_different_entities() -> None:
     kind = EntityKind()
 
-    assert kind.key(EntityPayload(name="Huey", type="tool", description="d")) != kind.key(
-        EntityPayload(name="huey", type="tool", description="d")
+    assert kind.key(EntityPayload(name="Celery", type="tool", description="d")) != kind.key(
+        EntityPayload(name="celery", type="tool", description="d")
     )
 
 

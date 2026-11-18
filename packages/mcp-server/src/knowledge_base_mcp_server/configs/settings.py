@@ -23,6 +23,9 @@ class McpServerSettings(BaseSettings):
     allowed_hosts: tuple[str, ...]
     allowed_origins: tuple[str, ...]
     log_level: str
+    # Logs sorted(sys.modules) when a stdio session ends: how a test sees what
+    # the server imported by then. KB_DEBUG_MODULES overrides.
+    debug_modules: bool
 
 
 def get_settings(env: Environment | None = None) -> McpServerSettings:

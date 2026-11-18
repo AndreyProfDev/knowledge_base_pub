@@ -8,33 +8,19 @@ from typing import override
 
 import yaml
 from fake_embedder import FakeEmbedder
-from huey import MemoryHuey  # pyright: ignore[reportMissingTypeStubs]
-from huey.api import ChordResult, Result, ResultGroup  # pyright: ignore[reportMissingTypeStubs]
+from fake_kb import temp_sqlite_settings
 
-from knowledge_base_config import Environment
-from tools_knowledge_base.configs.settings import (
-    KnowledgeBaseSettings,
-    WarmupSettings,
-    get_settings,
-)
+from tools_knowledge_base.configs.settings import KnowledgeBaseSettings, WarmupSettings
 from tools_knowledge_base.errors import KnowledgeBaseError
 
 
-def warmup_settings(
-    path: Path, retries: int | None = None, *, dump: bool = False, due_retries: bool = False
-) -> KnowledgeBaseSettings:
+def warmup_settings(path: Path, *, dump: bool = False) -> KnowledgeBaseSettings:
     """The testing overlay loading warm-up files from ``path``, and with ``dump`` writing there.
 
     ``dump`` is off by default: a dump copy shadows a later edit of the hand-written file.
-    ``due_retries`` makes a retry due at once, so a drain runs it.
     """
-    settings = get_settings(Environment.TESTING)
-    update: dict[str, object] = {"warmup": WarmupSettings(path=path, dump=dump)}
-    queue: dict[str, object] = {} if retries is None else {"retries": retries}
-    if due_retries:
-        queue["retry_delay_seconds"] = 0
-    update["queue"] = settings.queue.model_copy(update=queue)
-    return settings.model_copy(update=update)
+    settings = temp_sqlite_settings()
+    return settings.model_copy(update={"warmup": WarmupSettings(path=path, dump=dump)})
 
 
 def write_yaml(path: Path, content: object) -> None:
@@ -45,46 +31,28 @@ def fake_items(*titles: str) -> list[dict[str, object]]:
     return [{"title": title, "tags": ["a"]} for title in titles]
 
 
-class FailingHuey(MemoryHuey):
-    """A ``MemoryHuey`` whose enqueues after the first ``allowed`` raise ``error``."""
+class FailOnCallEmbedder(FakeEmbedder):
+    """Raises ``error`` on its ``call``-th ``embed_documents`` call (1-based)."""
 
-    def __init__(self, allowed: int, error: BaseException | None = None) -> None:
-        super().__init__("knowledge-base")  # pyright: ignore[reportUnknownMemberType]
-        self.allowed = allowed
-        self.error = error or OSError("queue storage unreachable")
+    def __init__(self, call: int, error: Exception | None = None) -> None:
+        super().__init__()
+        self.call = call
+        self.error = error or OSError("embeddings server unreachable")
 
     @override
-    def enqueue(self, task: object) -> ResultGroup | ChordResult | Result | None:
-        if not self.allowed:
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        if len(self.batch_sizes) + 1 == self.call:
+            self.batch_sizes.append(len(texts))
             raise self.error
-        self.allowed -= 1
-        return super().enqueue(task)  # pyright: ignore[reportUnknownMemberType]
+        return super().embed_documents(texts)
 
 
-class UnrecordableHuey(MemoryHuey):
-    """A ``MemoryHuey`` whose ``put`` raises for a key starting with ``prefix``."""
-
-    def __init__(self, prefix: str) -> None:
-        super().__init__("knowledge-base")  # pyright: ignore[reportUnknownMemberType]
-        self.prefix = prefix
+class ShortEmbedder(FakeEmbedder):
+    """Returns one vector too few."""
 
     @override
-    def put(self, key: str, data: object) -> None:
-        if key.startswith(self.prefix):
-            msg = "queue storage unreachable"
-            raise OSError(msg)
-        super().put(key, data)  # pyright: ignore[reportUnknownMemberType]
-
-
-class FailingUnrecordableHuey(FailingHuey):
-    """A ``FailingHuey`` whose ``put`` of a warm-up run record raises."""
-
-    @override
-    def put(self, key: str, data: object) -> None:
-        if key.startswith("warmup:"):
-            msg = "run storage unreachable"
-            raise OSError(msg)
-        super().put(key, data)  # pyright: ignore[reportUnknownMemberType]
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return super().embed_documents(texts)[:-1]
 
 
 class BoomEmbedder(FakeEmbedder):

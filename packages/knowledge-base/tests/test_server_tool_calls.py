@@ -11,7 +11,6 @@ from fake_server import call, serve
 from mcp.server.mcpserver.exceptions import ToolError
 
 from tools_knowledge_base.context import KnowledgeBase
-from tools_knowledge_base.queue import drain
 
 
 @pytest.fixture
@@ -23,7 +22,7 @@ def test_every_tool_round_trips_through_the_server(kb: KnowledgeBase) -> None:
     server = serve(kb)
 
     accepted = call(server, "store_alpha", title="first", tags=["x"])
-    drain(kb.huey)
+    kb.writes.drain()
     request = call(server, "get_memory_request", request_id=accepted["request_id"])
     assert request["status"] == "done"
     item_id = str(accepted["item_id"])
@@ -34,11 +33,11 @@ def test_every_tool_round_trips_through_the_server(kb: KnowledgeBase) -> None:
     page = call(server, "list_alpha", limit=10)
     assert [i["id"] for i in page["items"]] == [item_id]
     call(server, "update_alpha", id=item_id, title="first", tags=["y"])
-    drain(kb.huey)
+    kb.writes.drain()
     assert call(server, "get_alpha", id=item_id)["payload"] == {"title": "first", "tags": ["y"]}
     deleted = call(server, "delete_alpha", id=item_id)
     assert call(server, "list_alpha")["items"] == []
-    drain(kb.huey)
+    kb.writes.drain()
     request = call(server, "get_memory_request", request_id=deleted["request_id"])
     assert request["status"] == "done"
 
@@ -49,10 +48,10 @@ def test_an_update_changing_the_identity_moves_the_item_to_the_returned_id(
     """What the ``update_*`` description promises: the returned id, not ``id``, from then on."""
     server = serve(kb)
     old_id = call(server, "store_alpha", title="first", tags=[])["item_id"]
-    drain(kb.huey)
+    kb.writes.drain()
 
     new_id = call(server, "update_alpha", id=old_id, title="renamed", tags=[])["item_id"]
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert new_id != old_id
     assert call(server, "get_alpha", id=new_id)["payload"]["title"] == "renamed"
@@ -64,7 +63,7 @@ def test_search_passes_query_kind_top_k_and_min_score_through(kb: KnowledgeBase)
     server = serve(kb)
     first = call(server, "store_alpha", title="first", tags=[])["item_id"]
     second = call(server, "store_beta", title="second", tags=[])["item_id"]
-    drain(kb.huey)
+    kb.writes.drain()
 
     def ids(**arguments: object) -> list[str]:
         return [hit["id"] for hit in call(server, "search_memory", **arguments)["result"]]
@@ -77,7 +76,7 @@ def test_search_passes_query_kind_top_k_and_min_score_through(kb: KnowledgeBase)
 def test_list_pages_by_limit_and_cursor(kb: KnowledgeBase) -> None:
     server = serve(kb)
     stored = {call(server, "store_alpha", title=title, tags=[])["item_id"] for title in "abc"}
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert {item["id"] for item in call(server, "list_alpha")["items"]} == stored
     first = call(server, "list_alpha", limit=2)

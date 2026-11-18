@@ -1,4 +1,4 @@
-"""``warmup_memory``: all-or-nothing validation, then only missing or changed items queued."""
+"""``warmup_memory``: all-or-nothing validation, then only missing or changed items written."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ from tools_knowledge_base.errors import (
 )
 from tools_knowledge_base.models import WarmupKindCounts
 from tools_knowledge_base.operations import list_memory_items, warmup_memory
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base.store.protocol import Point
 
 
@@ -32,7 +31,7 @@ def _kb(path: Path) -> KnowledgeBase:
 def _errors(kb: KnowledgeBase) -> list[tuple[tuple[str | int, ...], str]]:
     with pytest.raises(ValidationError) as caught:
         warmup_memory(kb)
-    assert kb.huey.pending_count() == 0
+    assert _stored(kb) == {}
     return [(error["loc"], error["msg"]) for error in caught.value.errors()]
 
 
@@ -43,33 +42,30 @@ def test_a_second_run_on_the_same_files_leaves_every_item_unchanged(tmp_path: Pa
 
     first = warmup_memory(kb)
     assert first.kinds == {
-        "fake": WarmupKindCounts(queued=2, unchanged=0),
-        "other": WarmupKindCounts(queued=1, unchanged=0),
+        "fake": WarmupKindCounts(written=2, unchanged=0),
+        "other": WarmupKindCounts(written=1, unchanged=0),
     }
-    assert first.total_queued == kb.huey.pending_count() == 3
-    drain(kb.huey)
+    assert first.total_written == 3
+    assert len(_stored(kb)) == 2
 
     second = warmup_memory(kb)
     assert second.kinds == {
-        "fake": WarmupKindCounts(queued=0, unchanged=2),
-        "other": WarmupKindCounts(queued=0, unchanged=1),
+        "fake": WarmupKindCounts(written=0, unchanged=2),
+        "other": WarmupKindCounts(written=0, unchanged=1),
     }
-    assert second.total_queued == kb.huey.pending_count() == 0
-    assert second.run_id != first.run_id
+    assert second.total_written == 0
 
 
-def test_an_edited_non_key_field_requeues_only_that_item_under_its_id(tmp_path: Path) -> None:
+def test_an_edited_non_key_field_rewrites_only_that_item_under_its_id(tmp_path: Path) -> None:
     write_yaml(tmp_path / "a.yaml", {"fake": fake_items("one", "two")})
     kb = _kb(tmp_path)
     warmup_memory(kb)
-    drain(kb.huey)
     before = _stored(kb)
 
     edited: dict[str, object] = {"title": "two", "tags": []}
     write_yaml(tmp_path / "a.yaml", {"fake": [*fake_items("one"), edited]})
     report = warmup_memory(kb)
-    assert report.kinds["fake"] == WarmupKindCounts(queued=1, unchanged=1)
-    drain(kb.huey)
+    assert report.kinds["fake"] == WarmupKindCounts(written=1, unchanged=1)
 
     after = _stored(kb)
     assert after.keys() == before.keys()
@@ -92,7 +88,7 @@ def test_the_same_key_in_two_files_is_rejected_naming_both(tmp_path: Path) -> No
     ]
 
 
-def test_one_over_cap_item_rejects_the_run_and_queues_none(tmp_path: Path) -> None:
+def test_one_over_cap_item_rejects_the_run_and_writes_none(tmp_path: Path) -> None:
     long = {"title": "long", "tags": ["x" * 500]}
     write_yaml(tmp_path / "a.yaml", {"fake": [*fake_items("one"), long, *fake_items("two")]})
 
@@ -138,7 +134,7 @@ def test_yml_files_are_read_and_dotfiles_skipped(tmp_path: Path) -> None:
     write_yaml(tmp_path / "a.yml", {"fake": fake_items("one")})
     (tmp_path / ".gitignore").write_text("*\n", encoding="utf-8")
 
-    assert warmup_memory(_kb(tmp_path)).total_queued == 1
+    assert warmup_memory(_kb(tmp_path)).total_written == 1
 
 
 def test_a_non_yaml_entry_or_subdirectory_is_an_error(tmp_path: Path) -> None:
@@ -164,7 +160,7 @@ def test_a_directory_holding_no_items_raises_naming_it(
 
     with pytest.raises(WarmupDirectoryEmpty, match=f"{tmp_path.resolve()} holds no items"):
         warmup_memory(kb)
-    assert kb.huey.pending_count() == 0
+    assert _stored(kb) == {}
 
 
 def test_a_missing_directory_names_its_path(tmp_path: Path) -> None:
@@ -177,13 +173,12 @@ def test_a_missing_relative_directory_is_named_absolute() -> None:
         warmup_memory(_kb(Path("absent-warmup")))
 
 
-def test_a_stored_payload_failing_its_model_is_requeued(
+def test_a_stored_payload_failing_its_model_is_rewritten(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     write_yaml(tmp_path / "a.yaml", {"fake": fake_items("one")})
     kb = _kb(tmp_path)
     warmup_memory(kb)
-    drain(kb.huey)
     [item_id] = _stored(kb)
     corrupt = Point(
         id=item_id,
@@ -195,8 +190,9 @@ def test_a_stored_payload_failing_its_model_is_requeued(
     kb.store.upsert([corrupt])
 
     with caplog.at_level(logging.WARNING, logger="tools_knowledge_base.operations.warmup"):
-        assert warmup_memory(kb).total_queued == 1
+        assert warmup_memory(kb).total_written == 1
 
+    assert _stored(kb)[item_id]["tags"] == ["a"]
     [record] = [r for r in caplog.records if r.name == "tools_knowledge_base.operations.warmup"]
     assert record.levelno == logging.WARNING
     assert record.getMessage().startswith(

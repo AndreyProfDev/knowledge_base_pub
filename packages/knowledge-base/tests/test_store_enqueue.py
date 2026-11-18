@@ -19,12 +19,12 @@ def test_store_returns_queued_with_the_key_derived_id_and_embeds_nothing() -> No
     embedder = FakeEmbedder()
     kb = open_fake_kb(embedder=embedder)
 
-    accepted = store_memory(kb, "fake", {"title": "huey", "tags": ["queue"]})
+    accepted = store_memory(kb, "fake", {"title": "celery", "tags": ["queue"]})
 
     assert accepted.status == "queued"
-    assert accepted.item_id == uuid5(KB_NAMESPACE, "fake:huey")
+    assert accepted.item_id == uuid5(KB_NAMESPACE, "fake:celery")
     assert accepted.request_id
-    assert kb.huey.pending_count() == 1
+    assert kb.writes.queued() == 1
     assert embedder.documents == []
     assert kb.store.get([accepted.item_id]) == []
 
@@ -32,8 +32,8 @@ def test_store_returns_queued_with_the_key_derived_id_and_embeds_nothing() -> No
 def test_restoring_a_key_addresses_the_same_item() -> None:
     kb = open_fake_kb()
 
-    first = store_memory(kb, "fake", {"title": "huey", "tags": []})
-    second = store_memory(kb, "fake", {"title": "huey", "tags": ["again"]})
+    first = store_memory(kb, "fake", {"title": "celery", "tags": []})
+    second = store_memory(kb, "fake", {"title": "celery", "tags": ["again"]})
 
     assert first.item_id == second.item_id
     assert first.request_id != second.request_id
@@ -54,7 +54,7 @@ def test_an_unknown_kind_fails_before_enqueue() -> None:
     with pytest.raises(UnknownKind, match="'nope'"):
         store_memory(kb, "nope", {"title": "t", "tags": []})
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_a_malformed_payload_fails_before_enqueue() -> None:
@@ -63,7 +63,7 @@ def test_a_malformed_payload_fails_before_enqueue() -> None:
     with pytest.raises(ValidationError, match="tags"):
         store_memory(kb, "fake", {"title": "t"})
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_an_empty_embed_text_is_one_validation_error_at_the_root() -> None:
@@ -77,7 +77,7 @@ def test_an_empty_embed_text_is_one_validation_error_at_the_root() -> None:
     assert error["loc"] == ()
     assert error["msg"] == "embed text is empty"
     assert caught.value.title == FakePayload.__name__
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_an_embed_text_over_the_token_limit_is_rejected() -> None:

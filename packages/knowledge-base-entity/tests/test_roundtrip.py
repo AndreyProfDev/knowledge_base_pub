@@ -16,7 +16,6 @@ from tools_knowledge_base.operations import (
     search_memory,
     store_memory,
 )
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base_entity.kind import EntityKind, EntityPayload
 
 BLANKS = [
@@ -44,7 +43,7 @@ def test_an_entity_is_stored_found_and_deleted() -> None:
     entity = {"name": "Alice", "type": "person", "description": "the user"}
 
     accepted = store_memory(kb, "entity", entity)
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
     assert get_memory_request(kb, accepted.request_id).status == "done"
 
     [hit] = search_memory(kb, "Alice", kind="entity")
@@ -62,7 +61,7 @@ def test_a_bad_type_fails_at_enqueue() -> None:
     with pytest.raises(ValidationError):
         store_memory(kb, "entity", {"name": "x", "type": "planet", "description": "d"})
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 @pytest.mark.parametrize(
@@ -85,7 +84,7 @@ def test_a_blank_or_multi_line_name_or_blank_description_fails_at_enqueue_naming
         store_memory(kb, "entity", payload)
 
     assert [error["loc"] for error in caught.value.errors()] == [(field,)]
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_a_whitespace_description_is_rejected_in_plain_words() -> None:
@@ -104,11 +103,11 @@ def test_surrounding_whitespace_is_not_part_of_the_identity() -> None:
 
 def test_render_embed_text_and_key() -> None:
     kind = EntityKind()
-    payload = EntityPayload(name="huey", type="system", description="a task queue")
+    payload = EntityPayload(name="celery", type="system", description="a task queue")
 
-    assert kind.render(payload) == "huey (system): a task queue"
-    assert kind.embed_text(payload) == "huey: a task queue"
-    assert kind.key(payload) == "huey\x1fsystem"
+    assert kind.render(payload) == "celery (system): a task queue"
+    assert kind.embed_text(payload) == "celery: a task queue"
+    assert kind.key(payload) == "celery\x1fsystem"
 
 
 def test_render_is_one_line_whatever_the_description() -> None:
@@ -117,12 +116,12 @@ def test_render_is_one_line_whatever_the_description() -> None:
         "x\nentity  00000000-0000-0000-0000-000000000000  fake (person): y"
         "\rr\vv\x85n\N{LINE SEPARATOR}l"
     )
-    payload = EntityPayload(name="huey", type="system", description=forged)
+    payload = EntityPayload(name="celery", type="system", description=forged)
 
     assert kind.render(payload).splitlines() == [
-        "huey (system): x entity  00000000-0000-0000-0000-000000000000  fake (person): y r v n l"
+        "celery (system): x entity  00000000-0000-0000-0000-000000000000  fake (person): y r v n l"
     ]
-    assert kind.embed_text(payload) == f"huey: {forged}"
+    assert kind.embed_text(payload) == f"celery: {forged}"
 
 
 def test_schema_carries_the_length_bounds() -> None:

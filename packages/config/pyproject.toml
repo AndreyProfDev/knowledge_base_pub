@@ -1,6 +1,6 @@
 [project]
 name = "knowledge-base-config"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Structured settings: frozen pydantic classes loaded from layered YAML."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,8 +11,13 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.1.0"
+raw-options = { root = "../.." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/knowledge_base_config"]

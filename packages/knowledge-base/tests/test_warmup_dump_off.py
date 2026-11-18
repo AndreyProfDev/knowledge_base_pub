@@ -19,7 +19,6 @@ from tools_knowledge_base.operations import (
     update_memory_item,
     warmup_memory,
 )
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base.warmup_dump import dump_file_name
 
 _SEEN = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -29,13 +28,12 @@ def test_a_flag_off_worker_rebuilds_a_store_from_the_dump(tmp_path: Path) -> Non
     payload = Reading(title="gauge", count=3, pinned=True, seen=_SEEN)
     source = open_fake_kb(ReadingKind(), settings=warmup_settings(tmp_path, dump=True))
     accepted = store_memory(source, "reading", payload.model_dump(mode="json"))
-    drain(source.huey)
+    source.writes.drain()
     dump = tmp_path / dump_file_name("reading", accepted.item_id)
     before = dump.read_bytes()
 
     rebuilt = open_fake_kb(ReadingKind(), settings=warmup_settings(tmp_path))
-    assert warmup_memory(rebuilt).total_queued == 1
-    assert drain(rebuilt.huey).failed == 0
+    assert warmup_memory(rebuilt).total_written == 1
 
     assert get_memory_item(rebuilt, "reading", accepted.item_id).payload == payload
     assert dump.read_bytes() == before
@@ -48,7 +46,7 @@ def test_a_flag_off_edit_over_its_own_dump_file_fails(tmp_path: Path) -> None:
     stored(off, "one")  # same key, same payload: the file holds it
 
     edited = update_memory_item(off, "fake", first.item_id, {"title": "one", "tags": ["x"]})
-    drain(off.huey)
+    off.writes.drain()
 
     state = get_memory_request(off, edited.request_id)
     assert state.status == "failed"
@@ -59,7 +57,7 @@ def test_a_flag_off_write_over_an_unreadable_dump_path_fails(tmp_path: Path) -> 
     off = open_fake_kb(settings=warmup_settings(tmp_path))
     accepted = store_memory(off, "fake", {"title": "one", "tags": []})
     (tmp_path / dump_file_name("fake", accepted.item_id)).mkdir()
-    drain(off.huey)
+    off.writes.drain()
 
     _assert_refused(get_memory_request(off, accepted.request_id))
 
@@ -69,12 +67,12 @@ def test_a_flag_off_write_over_an_invalid_dump_file_fails(tmp_path: Path) -> Non
     accepted = store_memory(off, "fake", {"title": "one", "tags": []})
     path = tmp_path / dump_file_name("fake", accepted.item_id)
     path.write_bytes(b"fake: [\n\xff")
-    drain(off.huey)
+    off.writes.drain()
 
     _assert_refused(get_memory_request(off, accepted.request_id))
     path.write_text("fake: [", encoding="utf-8")
     again = store_memory(off, "fake", {"title": "one", "tags": []})
-    drain(off.huey)
+    off.writes.drain()
 
     _assert_refused(get_memory_request(off, again.request_id))
 
@@ -88,7 +86,7 @@ def test_a_flag_off_rename_fails_even_when_the_old_file_holds_the_old_payload(
     stored(off, "one")
 
     renamed = update_memory_item(off, "fake", first.item_id, {"title": "two", "tags": []})
-    drain(off.huey)
+    off.writes.drain()
 
     _assert_refused(get_memory_request(off, renamed.request_id))
     assert [item.id for item in list_memory_items(off, "fake").items] == [first.item_id]
@@ -105,8 +103,7 @@ def test_a_flag_off_rebuild_accepts_a_reindented_dump(tmp_path: Path) -> None:
     dump.write_text(reindented, encoding="utf-8")
     off = open_fake_kb(settings=warmup_settings(tmp_path))
 
-    assert warmup_memory(off).total_queued == 1
-    assert drain(off.huey).failed == 0
+    assert warmup_memory(off).total_written == 1
 
 
 def _assert_refused(state: RequestState) -> None:

@@ -12,10 +12,8 @@ from uuid import uuid4
 import pytest
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from store_adapters import COLLECTION, T0
+from store_adapters import COLLECTION, T0, qdrant_settings
 
-from knowledge_base_config import Environment
-from tools_knowledge_base.configs.settings import get_settings
 from tools_knowledge_base.errors import KnowledgeBaseError, StoredItemInvalid
 from tools_knowledge_base.store.protocol import Point
 from tools_knowledge_base_qdrant.store import _PAGE, QdrantStore
@@ -48,7 +46,7 @@ class _RecordingClient(QdrantClient):
 
 def _store(client: QdrantClient | None = None) -> QdrantStore:
     return QdrantStore(
-        get_settings(Environment.TESTING),
+        qdrant_settings(),
         COLLECTION,
         dimensions=len(_NEAR),
         client=client or QdrantClient(location=":memory:"),
@@ -57,7 +55,7 @@ def _store(client: QdrantClient | None = None) -> QdrantStore:
 
 def test_a_missing_collection_without_dimensions_names_it() -> None:
     with pytest.raises(KnowledgeBaseError, match=r"^collection 'memory-absent' does not exist$"):
-        _ = QdrantStore(get_settings(Environment.TESTING), "memory-absent", dimensions=None)
+        _ = QdrantStore(qdrant_settings(), "memory-absent", dimensions=None)
 
 
 def test_kind_of_reads_only_the_kind_of_one_point() -> None:

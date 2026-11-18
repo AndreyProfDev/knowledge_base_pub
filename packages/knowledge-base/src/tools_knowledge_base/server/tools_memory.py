@@ -1,4 +1,4 @@
-"""The kind-agnostic tools: search, request status, and warm-up."""
+"""The kind-agnostic tools: search and request status."""
 
 from __future__ import annotations
 
@@ -15,25 +15,11 @@ from tools_knowledge_base.models import MemoryHit
 from tools_knowledge_base.operations import (
     MAX_LIMIT,
     get_memory_request,
-    get_warmup_progress,
     search_memory,
-    warmup_memory,
 )
 from tools_knowledge_base.server.tools_kinds import Tool, named
 
 _KEYWORD = inspect.Parameter.KEYWORD_ONLY
-_WARMUP_DOC = (
-    "Queue every item in the server's warm-up directory of YAML files that is not already "
-    "stored unchanged; a stored item with the same key but different content is "
-    "overwritten, and nothing is deleted. Any bad file or item queues nothing and is "
-    "reported with its file, kind and index; a directory holding no items is an error. "
-    "Poll get_warmup_progress with the `run_id`."
-)
-_PROGRESS_DOC = (
-    "Report warm-up run `run_id`: how many of its writes are done, failed and pending, "
-    "and the first failures. A failing write stays pending through its retries, about "
-    "150 s, before it counts as failed."
-)
 
 
 def bind[**P, R](
@@ -68,7 +54,7 @@ def _search_parameters(kinds: list[str]) -> list[inspect.Parameter]:
 
 
 def tools(kb: KnowledgeBase) -> list[Tool]:
-    """The generic tools, bound to ``kb``; all but ``warmup_memory`` read-only."""
+    """The generic tools, bound to ``kb``; all read-only."""
     read_only = ToolAnnotations(read_only_hint=True)
     kinds = kb.kinds.names()
     search_doc = (
@@ -80,7 +66,7 @@ def tools(kb: KnowledgeBase) -> list[Tool]:
     )
     request_doc = (
         "Report a queued request by the `request_id` a store, update or delete returned: "
-        "`queued` until the worker has run it, then `done`, or `failed` with the error."
+        "`queued` until this server has run it, then `done`, or `failed` with the error."
     )
 
     def search(
@@ -98,9 +84,4 @@ def tools(kb: KnowledgeBase) -> list[Tool]:
             read_only,
         ),
         (bind(get_memory_request, kb, request_doc), read_only),
-        (
-            bind(warmup_memory, kb, _WARMUP_DOC),
-            ToolAnnotations(destructive_hint=True, idempotent_hint=True),
-        ),
-        (bind(get_warmup_progress, kb, _PROGRESS_DOC), read_only),
     ]

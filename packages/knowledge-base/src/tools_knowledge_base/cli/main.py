@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from knowledge_base_config import Environment, environment_from_env
 from tools_knowledge_base.cli.context import CliContext
 from tools_knowledge_base.cli.memory import memory_commands
-from tools_knowledge_base.cli.warmup import warmup_command, warmup_progress_command
+from tools_knowledge_base.cli.warmup import warmup_command
 from tools_knowledge_base.configs.settings import get_settings
 from tools_knowledge_base.context import KnowledgeBase, open_knowledge_base
 from tools_knowledge_base.errors import KnowledgeBaseError
@@ -47,7 +47,7 @@ def build_cli(kinds: KindRegistry) -> click.Group:
         """Store, search and manage the knowledge base's memories."""
         ctx.obj = dataclasses.replace(cast("CliContext", ctx.obj), env=Environment(env))
 
-    for command in [*memory_commands(kinds), warmup_command, warmup_progress_command]:
+    for command in [*memory_commands(kinds), warmup_command]:
         knowledge_base_cli.add_command(command)
     return knowledge_base_cli
 

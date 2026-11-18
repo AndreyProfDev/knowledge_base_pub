@@ -1,6 +1,6 @@
 [project]
 name = "tools-knowledge-base-qdrant"
-version = "0.1.0"
+dynamic = ["version"]
 description = "The Qdrant vector-store adapter for the Knowledge Base."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,8 +13,13 @@ dependencies = [
 qdrant = "tools_knowledge_base_qdrant.store:QdrantStore"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.1.0"
+raw-options = { root = "../.." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tools_knowledge_base_qdrant"]

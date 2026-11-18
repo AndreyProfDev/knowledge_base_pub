@@ -1,5 +1,12 @@
+# Everything lives under the absolute data directory (`${kb_data_dir:}`), so the
+# server works from any cwd. KB_VECTOR_STORE picks another backend: a client
+# cannot edit packaged YAML.
 vector_store:
-  backend: lancedb
+  backend: ${oc.env:KB_VECTOR_STORE,sqlite}
+  sqlite:
+    path: ${kb_data_dir:}/knowledge.sqlite3
+  qdrant:
+    location: http://localhost:6333
   lancedb:
-    path: ./data/lancedb
+    path: ${kb_data_dir:}/lancedb
     max_small_fragments: 20

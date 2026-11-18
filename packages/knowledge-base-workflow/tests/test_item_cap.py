@@ -41,4 +41,4 @@ def test_an_over_cap_store_workflow_call_is_an_error_naming_count_cap_and_hint()
         "(counted over name: description (or name), then one step per line)." in message
     )
     assert _HINT in message
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0

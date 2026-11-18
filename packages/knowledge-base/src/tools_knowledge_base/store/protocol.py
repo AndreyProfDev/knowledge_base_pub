@@ -37,8 +37,10 @@ class Hit(Item):
 class VectorStore(Protocol):
     """One collection of points, partitioned by ``kind``."""
 
-    dimensions: int
-    """Of the opened collection or index."""
+    @property
+    def dimensions(self) -> int:
+        """Of the opened collection or index."""
+        ...
 
     def upsert(self, points: Sequence[Point]) -> None:
         """Write each point; one whose stored twin has an equal or newer ``updated_at`` is left."""

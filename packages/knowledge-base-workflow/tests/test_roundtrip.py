@@ -16,7 +16,6 @@ from tools_knowledge_base.operations import (
     search_memory,
     store_memory,
 )
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base_workflow.kind import WorkflowKind, WorkflowPayload
 
 
@@ -32,7 +31,7 @@ def test_a_workflow_is_stored_found_and_deleted() -> None:
     workflow = {"name": "morning routine", "steps": ["coffee", "email"]}
 
     accepted = store_memory(kb, "workflow", workflow)
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
     assert get_memory_request(kb, accepted.request_id).status == "done"
 
     [hit] = search_memory(kb, "routine", kind="workflow")
@@ -52,10 +51,10 @@ def test_missing_steps_or_an_overlong_description_fails_at_enqueue() -> None:
     with pytest.raises(ValidationError):
         store_memory(kb, "workflow", {"name": "x", "description": "d" * 496, "steps": ["s"]})
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
     # "x: " plus 495 characters plus "\ns" is the 500-character cap.
     store_memory(kb, "workflow", {"name": "x", "description": "d" * 495, "steps": ["s"]})
-    assert kb.huey.pending_count() == 1
+    assert kb.writes.queued() == 1
 
 
 @pytest.mark.parametrize(
@@ -95,7 +94,7 @@ def test_an_invalid_name_or_step_fails_at_enqueue_naming_the_field(
         store_memory(kb, "workflow", payload)
 
     assert [".".join(map(str, error["loc"])) for error in caught.value.errors()] == [field]
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_a_multi_line_step_is_rejected_in_plain_words() -> None:

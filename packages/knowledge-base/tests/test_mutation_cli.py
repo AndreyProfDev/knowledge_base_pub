@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from tools_knowledge_base.cli.main import main
 from tools_knowledge_base.context import KnowledgeBase
-from tools_knowledge_base.queue import drain
 
 
 class TaskPayload(BaseModel):
@@ -57,7 +56,7 @@ def test_a_repeated_option_reaches_a_strict_model_as_a_list_and_later_fields_sta
     code, output = invoke(
         kb, "store-task", "--steps", "plan", "--steps", "ship", "--due-date", "friday"
     )
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert code == 0, output
     _, shown = invoke(kb, "get", "task", str(item_id_in(output)))

@@ -1,123 +1,79 @@
-"""``get_memory_request``: queued until the worker ends a write, then done or failed."""
+"""``get_memory_request``: queued until the queue runs a write, then done or failed."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import override
-from uuid import uuid4
 
 import pytest
 from fake_embedder import FakeEmbedder
 from fake_kb import open_fake_kb
+from write_harness import Sleeps
 
-from knowledge_base_config import Environment
-from tools_knowledge_base.configs.settings import get_settings
 from tools_knowledge_base.errors import KnowledgeBaseError, UnknownRequest
 from tools_knowledge_base.models import RequestState
 from tools_knowledge_base.operations import get_memory_request, store_memory
-from tools_knowledge_base.queue import drain, enqueue_write, make_huey
 
 
 class _DownEmbedder(FakeEmbedder):
-    """Counts the attempts; every one fails as an unreachable server would."""
+    """Counts the attempts; the first ``failures`` fail as an unreachable server would."""
 
-    def __init__(self) -> None:
+    def __init__(self, failures: int) -> None:
         super().__init__()
         self.attempts = 0
+        self.failures = failures
 
     @override
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         self.attempts += 1
-        msg = "embeddings server unreachable"
-        raise KnowledgeBaseError(msg)
+        if self.attempts <= self.failures:
+            msg = "embeddings server unreachable"
+            raise KnowledgeBaseError(msg)
+        return super().embed_documents(texts)
 
 
 def test_a_write_reads_queued_then_done() -> None:
     kb = open_fake_kb()
-    accepted = store_memory(kb, "fake", {"title": "huey", "tags": []})
+    accepted = store_memory(kb, "fake", {"title": "celery", "tags": []})
 
     assert get_memory_request(kb, accepted.request_id) == RequestState(
         request_id=accepted.request_id, status="queued"
     )
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert get_memory_request(kb, accepted.request_id).status == "done"
-    # preserve=True: reading the status does not consume it.
+    # Reading the status does not consume it.
     assert get_memory_request(kb, accepted.request_id).status == "done"
 
 
 def test_an_unknown_request_id_raises_naming_it() -> None:
-    with pytest.raises(UnknownRequest, match="no request 'no-such-request' was queued"):
+    with pytest.raises(UnknownRequest, match="request no-such-request was not issued by this"):
         get_memory_request(open_fake_kb(), "no-such-request")
 
 
-def test_a_write_reads_queued_between_retries_then_failed_with_the_last_error(
-    tmp_path: Path,
-) -> None:
-    testing = get_settings(Environment.TESTING)
-    # Each retry is due at once, so the drain runs them all.
-    queue = testing.queue.model_copy(
-        update={"path": str(tmp_path / "queue.db"), "retry_delay_seconds": 0}
-    )
-    settings = testing.model_copy(update={"queue": queue})
-    embedder = _DownEmbedder()
-    kb = open_fake_kb(embedder=embedder, huey=make_huey(queue), settings=settings)
-    accepted = store_memory(kb, "fake", {"title": "huey", "tags": []})
+def test_a_write_fails_with_the_last_error_after_three_attempts_and_two_sleeps() -> None:
+    embedder = _DownEmbedder(failures=3)
+    sleeps = Sleeps()
+    kb = open_fake_kb(embedder=embedder, sleep=sleeps)
+    accepted = store_memory(kb, "fake", {"title": "celery", "tags": []})
 
-    first = kb.huey.dequeue()  # pyright: ignore[reportUnknownVariableType]
-    kb.huey.execute(first)  # pyright: ignore[reportUnknownMemberType]
     assert get_memory_request(kb, accepted.request_id).status == "queued"
-    drain(kb.huey)
+    kb.writes.drain()
 
     state = get_memory_request(kb, accepted.request_id)
-    assert embedder.attempts == settings.queue.retries + 1
+    assert (embedder.attempts, sleeps.calls) == (3, [1.0, 2.0])
     assert state.status == "failed"
-    assert state.error == "KnowledgeBaseError('embeddings server unreachable')"
+    assert state.error == "KnowledgeBaseError: embeddings server unreachable"
 
 
-def test_a_request_for_an_uninstalled_kind_fails_after_one_attempt() -> None:
-    kb = open_fake_kb()
-    request_id = enqueue_write(
-        kb.write_memory,
-        kind="uninstalled",
-        item_id=uuid4(),
-        payload={"title": "huey", "tags": []},
-        updated_at=datetime.now(UTC),
-        replaces=None,
-    )
+def test_a_write_that_fails_once_lands_after_one_sleep() -> None:
+    embedder = _DownEmbedder(failures=1)
+    sleeps = Sleeps()
+    kb = open_fake_kb(embedder=embedder, sleep=sleeps)
+    accepted = store_memory(kb, "fake", {"title": "celery", "tags": []})
 
-    assert drain(kb.huey) == (1, 1)
+    kb.writes.drain()
 
-    state = get_memory_request(kb, request_id)
-    assert state.status == "failed"
-    assert state.error is not None
-    assert "unknown memory kind 'uninstalled'" in state.error
-
-
-def test_a_payload_its_kind_no_longer_accepts_fails_after_one_attempt() -> None:
-    kb = open_fake_kb()
-    # As if the kind's model was tightened between the enqueue and the run.
-    request_id = enqueue_write(
-        kb.write_memory,
-        kind="fake",
-        item_id=uuid4(),
-        payload={"title": "huey"},
-        updated_at=datetime.now(UTC),
-        replaces=None,
-    )
-
-    assert drain(kb.huey) == (1, 1)
-
-    state = get_memory_request(kb, request_id)
-    assert state.status == "failed"
-    assert state.error is not None
-    assert "validation error for FakePayload" in state.error
-
-
-def test_write_memory_keeps_the_queue_key_messages_queued_before_an_upgrade_carry() -> None:
-    task_class = open_fake_kb().write_memory.task_class
-    assert f"{task_class.__module__}.{task_class.__name__}" == (
-        "tools_knowledge_base.queue.write_memory"
-    )
+    assert get_memory_request(kb, accepted.request_id).status == "done"
+    assert (embedder.attempts, sleeps.calls) == (2, [1.0])
+    assert [item.id for item in kb.store.get([accepted.item_id])] == [accepted.item_id]

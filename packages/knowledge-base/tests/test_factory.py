@@ -31,8 +31,8 @@ def test_a_backend_with_no_installed_adapter_names_the_installed_ones() -> None:
         open_store(settings, "memory-fake-8", dimensions=8)
 
     assert str(raised.value) == (
-        "vector store backend 'not-installed' is not installed "
-        "(installed: ['lancedb', 'qdrant']); "
-        "install tools-knowledge-base-not-installed or pick an installed backend"
+        "vector store 'not-installed' is not installed; "
+        "install knowledge-base-mcp-server[not-installed] "
+        "(installed: ['lancedb', 'qdrant', 'sqlite'])"
     )
     assert isinstance(raised.value.__cause__, NoMatches)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from fake_kb import open_fake_kb
 
 from tools_knowledge_base.operations import list_memory_items, store_memory
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base_workflow.kind import WorkflowKind, WorkflowPayload
 
 
@@ -14,7 +13,7 @@ def test_two_queued_writes_of_one_name_leave_one_item_the_last_requested() -> No
     first = store_memory(kb, "workflow", {"name": "deploy", "steps": ["a"]})
     second = store_memory(kb, "workflow", {"name": "deploy", "steps": ["b", "c"]})
 
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert first.item_id == second.item_id
     assert [item.payload for item in list_memory_items(kb, "workflow").items] == [

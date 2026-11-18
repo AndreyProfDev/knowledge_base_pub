@@ -1,4 +1,4 @@
-"""``KnowledgeBaseSettings`` — queue, embedders, search defaults and the vector store."""
+"""``KnowledgeBaseSettings`` — embedders, search defaults and the vector store."""
 
 from __future__ import annotations
 
@@ -9,18 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from knowledge_base_config import BaseSettings, Environment, load_settings
 from tools_knowledge_base.limits import MAX_LIMIT
-
-
-class QueueSettings(BaseModel):
-    """The huey write queue and its retry policy."""
-
-    model_config = ConfigDict(frozen=True)
-
-    path: str
-    retries: int
-    retry_delay_seconds: int
-    retry_backoff: float
-    timeout_seconds: float
 
 
 class EmbedderSettings(BaseModel):
@@ -113,15 +101,24 @@ class QdrantSettings(BaseModel):
     location: str
 
 
+class SqliteSettings(BaseModel):
+    """The SQLite adapter: one database file on a local filesystem."""
+
+    model_config = ConfigDict(frozen=True)
+
+    path: Path
+
+
 class VectorStoreSettings(BaseModel):
     """Which adapter stores the points, and that adapter's block."""
 
     model_config = ConfigDict(frozen=True)
 
     collection_prefix: str
-    backend: Literal["lancedb", "qdrant"]
+    backend: Literal["lancedb", "qdrant", "sqlite"]
     lancedb: LanceDBSettings | None = None
     qdrant: QdrantSettings | None = None
+    sqlite: SqliteSettings | None = None
 
     @model_validator(mode="after")
     def _backend_block_present(self) -> Self:
@@ -141,7 +138,6 @@ class KnowledgeBaseSettings(BaseSettings):
 
     yaml_directory: ClassVar[Path] = Path(__file__).parent
 
-    queue: QueueSettings
     embeddings: EmbeddingsSettings
     search: SearchSettings
     item_limits: ItemLimitsSettings

@@ -9,12 +9,14 @@ from types import ModuleType
 from uuid import UUID, uuid4
 
 from fake_embedder import FakeEmbedder
+from fake_kb import sqlite_settings
 from pydantic import JsonValue
 
 from knowledge_base_config import Environment
 from tools_knowledge_base.configs.settings import (
     KnowledgeBaseSettings,
     LanceDBSettings,
+    QdrantSettings,
     VectorStoreSettings,
     get_settings,
 )
@@ -22,8 +24,20 @@ from tools_knowledge_base.store.protocol import Point
 
 
 def _qdrant(tmp_path: Path) -> KnowledgeBaseSettings:
-    # The testing overlay: in-process local mode, its storage the client's own.
-    return get_settings(Environment.TESTING)
+    return qdrant_settings()
+
+
+def qdrant_settings() -> KnowledgeBaseSettings:
+    """The testing overlay on in-process Qdrant, its storage the client's own."""
+    return get_settings(Environment.TESTING).model_copy(
+        update={
+            "vector_store": VectorStoreSettings(
+                collection_prefix="memory",
+                backend="qdrant",
+                qdrant=QdrantSettings(location=":memory:"),
+            )
+        }
+    )
 
 
 def _lancedb(tmp_path: Path) -> KnowledgeBaseSettings:
@@ -39,9 +53,14 @@ def _lancedb(tmp_path: Path) -> KnowledgeBaseSettings:
     )
 
 
+def _sqlite(tmp_path: Path) -> KnowledgeBaseSettings:
+    return sqlite_settings(tmp_path / "knowledge.db")
+
+
 ADAPTERS: dict[str, Callable[[Path], KnowledgeBaseSettings]] = {
     "lancedb": _lancedb,
     "qdrant": _qdrant,
+    "sqlite": _sqlite,
 }
 """Adapter name to the settings that select it; one row per installed adapter."""
 

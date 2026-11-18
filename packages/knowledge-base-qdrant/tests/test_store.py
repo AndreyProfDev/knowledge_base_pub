@@ -11,16 +11,16 @@ from uuid import UUID, uuid4
 import pytest
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+from store_adapters import qdrant_settings
 
-from knowledge_base_config import Environment
-from tools_knowledge_base.configs.settings import KnowledgeBaseSettings, get_settings
+from tools_knowledge_base.configs.settings import KnowledgeBaseSettings
 from tools_knowledge_base.errors import KnowledgeBaseError, StoredItemInvalid
 from tools_knowledge_base.store.protocol import Point
 from tools_knowledge_base_qdrant.store import QdrantStore
 
 
 def _settings() -> KnowledgeBaseSettings:
-    return get_settings(Environment.TESTING)
+    return qdrant_settings()
 
 
 def test_reopening_a_collection_reads_its_dimensions() -> None:

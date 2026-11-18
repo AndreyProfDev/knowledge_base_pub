@@ -1,19 +1,18 @@
-# Tests inject a MemoryHuey and a fake embedder; these keep anything that opens the
-# real ones (the cached api facade) keyless and fileless.
-queue:
-  path: ":memory:"
-  # A retry is scheduled a minute out, so draining the queue stops at it: a task that
-  # retries forever fails its test instead of hanging it. Tests of retries set 0.
-  retry_delay_seconds: 60
+# Tests inject a fake embedder and a drained write queue; these keep anything that
+# opens the real ones (e.g. `open_knowledge_base`) keyless and fileless.
 embeddings:
+  # Empty, not the base's real key: a test reaching OpenAI fails offline instead.
   embedders:
+    openai-large:
+      api_key: ""
     openai-small:
-      # Empty, not the base's real key: a test reaching OpenAI fails offline instead.
       api_key: ""
 warmup:
   # Tests turn the dump on with a tmp_path; never into the repo's ./knowledge-warmup.
   dump: false
 vector_store:
-  backend: qdrant
-  qdrant:
-    location: ":memory:"
+  backend: sqlite
+  sqlite:
+    # A file, not `:memory:`: the write thread opens its own connection. Tests pass
+    # their own temp file (`fake_kb.temp_sqlite_settings`); pytest's KB_DATA_DIR is scratch.
+    path: ${kb_data_dir:}/knowledge.sqlite3

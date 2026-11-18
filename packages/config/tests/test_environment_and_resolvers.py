@@ -20,7 +20,7 @@ from omegaconf.errors import InterpolationResolutionError
 
 from knowledge_base_config import BaseSettings, Environment, load_settings
 from knowledge_base_config.environment import TOOLS_ENV_VAR, environment_from_env
-from knowledge_base_config.resolvers import PackageNotFoundError, package_dir
+from knowledge_base_config.resolvers import PackageNotFoundError, kb_data_dir, package_dir
 
 
 @contextmanager
@@ -70,7 +70,7 @@ class TestEnvironmentFromEnv:
         """Deliberately "testing" rather than another name.
 
         TOOLS_ENV steers every cached settings object in the process — e.g.
-        the `lru_cache` behind `tools_knowledge_base_api.app`'s settings. Any value other
+        the `lru_cache` behind `tools_knowledge_base`'s `get_settings`. Any value other
         than the one the suite already runs under would, if it ever escaped
         this block or were read inside it, pin that singleton to the wrong
         overlay; "prod" would additionally resolve any `${secret:...}` in a
@@ -89,7 +89,7 @@ class TestEnvironmentFromEnv:
             environment_from_env()
         message = str(caught.value)
         assert "'staging'" in message
-        assert "local, testing, prod" in message
+        assert "local, testing" in message
 
 
 class TestPackageDir:
@@ -131,37 +131,48 @@ class TestLoaderFailureModes:
     def test_local_pre_seeds_from_a_dotenv_file(self, tmp_path: Path) -> None:
         """LOCAL is the only overlay that reads .env.
 
-        The file is written into `tmp_path` and the cwd moved there, rather than
-        relying on the checkout having one: a developer's `.env` would make this
-        pass locally and vanish in CI, where nothing is committed.
+        The file is written into a data directory named by `KB_DATA_DIR` rather
+        than relying on the machine having one: a developer's `.env` would make
+        this pass locally and vanish in CI, where nothing is committed.
         """
         base = tmp_path / "base"
         base.mkdir()
+        data = tmp_path / "data"
+        data.mkdir()
         (base / "a.yaml").write_text("name: ${secret:loader_probe,fallback}\n", encoding="utf-8")
-        (tmp_path / ".env").write_text("LOADER_PROBE=from-the-dotenv-file\n", encoding="utf-8")
+        (data / ".env").write_text("LOADER_PROBE=from-the-dotenv-file\n", encoding="utf-8")
+        # `load_dotenv` writes into os.environ, so this also undoes that.
+        with env_var("LOADER_PROBE", None), env_var("KB_DATA_DIR", str(data)):
+            loaded = load_settings(settings_class(tmp_path), env=Environment.LOCAL)
+        assert loaded.name == "from-the-dotenv-file"
+
+    def test_a_dotenv_in_the_cwd_is_not_read(self, tmp_path: Path) -> None:
+        """Only the data directory's `.env` loads: the cwd may be a foreign project."""
+        base = tmp_path / "base"
+        base.mkdir()
+        data = tmp_path / "data"
+        data.mkdir()
+        (base / "a.yaml").write_text("name: ${secret:loader_probe,fallback}\n", encoding="utf-8")
+        (tmp_path / ".env").write_text("LOADER_PROBE=from-the-cwd\n", encoding="utf-8")
         previous = Path.cwd()
         os.chdir(tmp_path)
         try:
-            # `load_dotenv` writes into os.environ, so this also undoes that.
-            with env_var("LOADER_PROBE", None):
+            with env_var("LOADER_PROBE", None), env_var("KB_DATA_DIR", str(data)):
                 loaded = load_settings(settings_class(tmp_path), env=Environment.LOCAL)
         finally:
             os.chdir(previous)
-        assert loaded.name == "from-the-dotenv-file"
+        assert loaded.name == "fallback"
 
     def test_an_exported_variable_beats_the_dotenv_file(self, tmp_path: Path) -> None:
         """`override=False`: the process environment wins, so CI can override .env."""
         base = tmp_path / "base"
         base.mkdir()
+        data = tmp_path / "data"
+        data.mkdir()
         (base / "a.yaml").write_text("name: ${secret:loader_probe,fallback}\n", encoding="utf-8")
-        (tmp_path / ".env").write_text("LOADER_PROBE=from-the-dotenv-file\n", encoding="utf-8")
-        previous = Path.cwd()
-        os.chdir(tmp_path)
-        try:
-            with env_var("LOADER_PROBE", "exported"):
-                loaded = load_settings(settings_class(tmp_path), env=Environment.LOCAL)
-        finally:
-            os.chdir(previous)
+        (data / ".env").write_text("LOADER_PROBE=from-the-dotenv-file\n", encoding="utf-8")
+        with env_var("LOADER_PROBE", "exported"), env_var("KB_DATA_DIR", str(data)):
+            loaded = load_settings(settings_class(tmp_path), env=Environment.LOCAL)
         assert loaded.name == "exported"
 
     def test_a_secret_with_a_default_survives_an_empty_environment(self, tmp_path: Path) -> None:
@@ -180,15 +191,49 @@ class TestLoaderFailureModes:
         with pytest.raises(InterpolationResolutionError):
             load_settings(settings_class(tmp_path), env=Environment.TESTING)
 
-    def test_no_dotenv_anywhere_above_the_cwd_is_fine(self, tmp_path: Path) -> None:
-        """`find_dotenv` returns "" outside the repo; LOCAL must still load."""
+    def test_no_dotenv_in_the_data_directory_is_fine(self, tmp_path: Path) -> None:
+        """A data directory without a `.env` (or not yet created) must still load."""
         base = tmp_path / "base"
         base.mkdir()
         (base / "a.yaml").write_text("name: plain\n", encoding="utf-8")
-        previous = Path.cwd()
-        os.chdir(tmp_path)
-        try:
+        with env_var("KB_DATA_DIR", str(tmp_path / "absent")):
             loaded = load_settings(settings_class(tmp_path), env=Environment.LOCAL)
-        finally:
-            os.chdir(previous)
         assert loaded.name == "plain"
+
+    def test_the_data_dir_resolver_reaches_a_setting(self, tmp_path: Path) -> None:
+        base = tmp_path / "base"
+        base.mkdir()
+        (base / "a.yaml").write_text("name: ${kb_data_dir:}/x\n", encoding="utf-8")
+        with env_var("KB_DATA_DIR", str(tmp_path / "data")):
+            loaded = load_settings(settings_class(tmp_path), env=Environment.TESTING)
+        assert loaded.name == f"{tmp_path / 'data'}/x"
+
+
+class TestKbDataDir:
+    def test_the_explicit_variable_wins(self, tmp_path: Path) -> None:
+        with env_var("KB_DATA_DIR", str(tmp_path)), env_var("XDG_DATA_HOME", "/xdg"):
+            assert kb_data_dir() == str(tmp_path)
+
+    def test_xdg_data_home_is_next(self) -> None:
+        with env_var("KB_DATA_DIR", None), env_var("XDG_DATA_HOME", "/xdg"):
+            assert kb_data_dir() == "/xdg/knowledge-base"
+
+    def test_the_home_directory_is_last(self) -> None:
+        with env_var("KB_DATA_DIR", None), env_var("XDG_DATA_HOME", None):
+            assert kb_data_dir() == str(Path.home() / ".local" / "share" / "knowledge-base")
+
+    def test_empty_variables_count_as_unset(self) -> None:
+        with env_var("KB_DATA_DIR", ""), env_var("XDG_DATA_HOME", ""):
+            assert kb_data_dir() == str(Path.home() / ".local" / "share" / "knowledge-base")
+
+    def test_an_empty_explicit_variable_falls_through_to_xdg(self) -> None:
+        with env_var("KB_DATA_DIR", ""), env_var("XDG_DATA_HOME", "/xdg"):
+            assert kb_data_dir() == "/xdg/knowledge-base"
+
+    def test_a_relative_path_is_resolved_against_the_cwd(self) -> None:
+        with env_var("KB_DATA_DIR", "data/dev"), env_var("XDG_DATA_HOME", None):
+            assert kb_data_dir() == str(Path.cwd() / "data" / "dev")
+
+    def test_a_relative_xdg_path_is_resolved_against_the_cwd(self) -> None:
+        with env_var("KB_DATA_DIR", None), env_var("XDG_DATA_HOME", "rel"):
+            assert kb_data_dir() == str(Path.cwd() / "rel" / "knowledge-base")

@@ -85,7 +85,7 @@ class KindSchema(_Frozen):
 class WarmupKindCounts(_Frozen):
     """One kind's share of a warm-up run."""
 
-    queued: int
+    written: int
     unchanged: int
 
 
@@ -97,39 +97,12 @@ class WarmupShadow(_Frozen):
 
 
 class WarmupReport(_Frozen):
-    """A warm-up run, validated and queued; ``kinds`` lists every installed kind.
+    """A warm-up run, validated and written; ``kinds`` lists every installed kind.
 
     ``shadowed`` lists each hand-written copy whose payload differs from the dump copy
-    that was queued instead; an identical one is not listed.
+    that was written instead; an identical one is not listed.
     """
 
-    run_id: str
     kinds: dict[str, WarmupKindCounts]
-    total_queued: int
+    total_written: int
     shadowed: list[WarmupShadow]
-
-
-class WarmupFailure(_Frozen):
-    """A write a warm-up run queued that failed its last retry."""
-
-    request_id: str
-    item_id: UUID
-    kind: str
-    error: str
-
-
-class WarmupProgress(_Frozen):
-    """How far the worker is through a warm-up run's writes.
-
-    ``pending`` includes writes between retries; ``failures`` holds the first 50.
-    """
-
-    run_id: str
-    total: int
-    done: int
-    failed: int
-    pending: int
-    unchanged: int
-    finished: bool
-    failures: list[WarmupFailure]
-    failures_truncated: bool

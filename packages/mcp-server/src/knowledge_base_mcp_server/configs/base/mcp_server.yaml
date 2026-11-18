@@ -1,23 +1,20 @@
 # Base configuration for the knowledge base's MCP server.
 
+# stdio = the client spawns this process and owns its lifetime (the default).
 # http = a long-running server on host:port, shared by every client.
-# stdio = the client spawns this process and owns its lifetime.
 # MCP_TRANSPORT overrides, so a client config can pick without editing YAML.
-transport: ${oc.env:MCP_TRANSPORT,http}
+transport: ${oc.env:MCP_TRANSPORT,stdio}
 
-# 0.0.0.0 so Docker's published port reaches the container. compose publishes
-# it on the host's loopback only, so this means "from the host", not the LAN.
-# The local overlay binds 127.0.0.1 for a server run directly on the host.
-host: 0.0.0.0
+# Loopback only: the server is reachable from this machine, not the LAN.
+host: 127.0.0.1
 port: 9799
 
 # The single endpoint every tool is served from. There are no per-tool paths.
 path: /mcp
 
 # The MCP SDK enables DNS-rebinding protection and rejects unexpected Host
-# headers with 421 Misdirected Request. Behind Docker the Host is whatever the
-# client dialled, so the defaults must cover localhost on any port: compose
-# publishes on ${KB_MCP_PORT:-9799}, and a moved host port must still answer.
+# headers with 421 Misdirected Request. The defaults cover localhost on any
+# port, so a client that dials a moved port still answers.
 allowed_hosts:
   - localhost
   - 127.0.0.1
@@ -28,6 +25,8 @@ allowed_hosts:
 allowed_origins:
   - "*"
 
-# TOOLS_LOG_LEVEL overrides, so a container's compose file can raise or lower
-# verbosity without editing YAML.
+# TOOLS_LOG_LEVEL overrides, so verbosity can change without editing YAML.
 log_level: ${oc.env:TOOLS_LOG_LEVEL,INFO}
+
+# Log the imported modules when a stdio session ends (a test reads it; off otherwise).
+debug_modules: ${oc.env:KB_DEBUG_MODULES,false}

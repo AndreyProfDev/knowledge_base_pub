@@ -13,7 +13,6 @@ class Environment(StrEnum):
 
     LOCAL = "local"
     TESTING = "testing"
-    PROD = "prod"
 
 
 def environment_from_env() -> Environment:

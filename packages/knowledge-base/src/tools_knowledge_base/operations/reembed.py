@@ -2,39 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
+import sqlite3
+from collections.abc import Iterator, Sequence
+from contextlib import closing
 from uuid import UUID
-
-from huey import Huey  # pyright: ignore[reportMissingTypeStubs]
 
 from tools_knowledge_base.context import KnowledgeBase
 from tools_knowledge_base.errors import KnowledgeBaseError
 from tools_knowledge_base.kinds.protocol import MemoryKind
 from tools_knowledge_base.models import ReembedReport
 from tools_knowledge_base.operations.items import memory_item
-from tools_knowledge_base.store.factory import open_store
+from tools_knowledge_base.reembed_journal import journal, journal_path, journaled, open_journal
+from tools_knowledge_base.store.factory import collection_name, open_store
 from tools_knowledge_base.store.protocol import Item, Point, VectorStore
 
 PAGE_SIZE = 32
 """Items per ``embed_documents`` call: TEI rejects more than 32 inputs a request."""
-
-
-def _journal_key(source_collection: str, item_id: UUID) -> str:
-    return f"reembed:{source_collection}:{item_id}"
-
-
-def _journaled(huey: Huey, source_collection: str, ids: Iterable[UUID]) -> set[UUID]:
-    """Those of ``ids`` an earlier run from ``source_collection`` found in the active one."""
-    return {
-        item_id
-        for item_id in ids
-        if huey.get(_journal_key(source_collection, item_id), peek=True) is not None  # pyright: ignore[reportUnknownMemberType]
-    }
-
-
-def _journal(huey: Huey, source_collection: str, ids: Iterable[UUID]) -> None:
-    for item_id in ids:
-        huey.put(_journal_key(source_collection, item_id), True)  # noqa: FBT003 - a marker; the value is never read  # pyright: ignore[reportUnknownMemberType]  # pragma: no mutate, equivalent: True->False, as _journaled reads only whether the key is set
 
 
 def _pages(source: VectorStore, kind: str) -> Iterator[Sequence[Item]]:
@@ -48,7 +31,8 @@ def _pages(source: VectorStore, kind: str) -> Iterator[Sequence[Item]]:
 
 def _copy_page(
     kb: KnowledgeBase,
-    source_collection: str,
+    conn: sqlite3.Connection,
+    run_key: str,
     kind: MemoryKind,
     items: Sequence[Item],
     too_long: list[UUID],
@@ -59,8 +43,8 @@ def _copy_page(
     Returns (copied, skipped as held, skipped as deleted since copied).
     """
     held = {item.id for item in kb.store.get([item.id for item in items])}
-    journaled = _journaled(kb.huey, source_collection, [item.id for item in items])
-    deleted = journaled - held
+    already = journaled(conn, run_key, [item.id for item in items])
+    deleted = already - held
     fresh: list[tuple[Item, str]] = []
     for item in items:
         if item.id in held or item.id in deleted:
@@ -79,7 +63,7 @@ def _copy_page(
             ]
         )
     # After the upsert landed: an id journaled but never copied would be lost for good.
-    _journal(kb.huey, source_collection, (held - journaled) | {item.id for item, _ in fresh})
+    journal(conn, run_key, (held - already) | {item.id for item, _ in fresh})
     return len(fresh), len(held), len(deleted)
 
 
@@ -91,9 +75,11 @@ def reembed_memory(kb: KnowledgeBase, source_collection: str) -> ReembedReport:
     active embedder's ``max_input_tokens`` is left out and listed in ``too_long``.
 
     Each id the active collection holds after a page lands, copied or already there, is
-    journaled as ``reembed:<source_collection>:<id>`` in the queue's storage. A re-run
-    skips a journaled id the active collection no longer holds (``skipped_deleted``): it
-    was deleted or reworded away since, and must not come back from the source.
+    journaled under the pair (active collection, ``source_collection``) in
+    ``reembed-journal.sqlite3`` next to the store (in memory for a store with no local
+    directory). A re-run skips a journaled id the active collection no longer holds
+    (``skipped_deleted``): it was deleted or reworded away since, and must not come
+    back from the source.
 
     Run with the worker stopped (Backends #changing-model). The accepted cost when that
     is broken between partial runs: an item the worker writes into the active
@@ -115,14 +101,17 @@ def reembed_memory(kb: KnowledgeBase, source_collection: str) -> ReembedReport:
         raise KnowledgeBaseError(msg)
     copied = skipped = deleted = 0
     too_long: list[UUID] = []
-    for kind in kb.kinds:
-        for items in _pages(source, kind.name):
-            page_copied, page_skipped, page_deleted = _copy_page(
-                kb, source_collection, kind, items, too_long
-            )
-            copied += page_copied
-            skipped += page_skipped
-            deleted += page_deleted
+    active = collection_name(kb.settings.vector_store.collection_prefix, kb.embedder.vector_space)
+    run_key = f"{active}<-{source_collection}"
+    with closing(open_journal(journal_path(kb.settings))) as conn:
+        for kind in kb.kinds:
+            for items in _pages(source, kind.name):
+                page_copied, page_skipped, page_deleted = _copy_page(
+                    kb, conn, run_key, kind, items, too_long
+                )
+                copied += page_copied
+                skipped += page_skipped
+                deleted += page_deleted
     return ReembedReport(
         copied=copied, skipped_existing=skipped, skipped_deleted=deleted, too_long=too_long
     )

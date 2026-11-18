@@ -7,9 +7,8 @@ raising — useful for optional secrets, and for keeping settings introspectable
 on a machine that has no credentials.
 
 Secrets reach the process the same way in every environment: exported in the
-shell, pre-seeded from ``.env`` (LOCAL only), or injected by the container
-runtime (``docker run -e``, Compose ``env_file:``). There is no encrypted-file
-or keychain tier in this workspace.
+shell, pre-seeded from ``.env`` (LOCAL only), or injected by whatever launches
+the process. There is no encrypted-file or keychain tier in this workspace.
 
 ``${package_dir:<import_name>}`` returns an installed package's directory, so
 package-internal data is addressed relative to the package rather than the
@@ -41,6 +40,28 @@ def register_resolvers() -> None:
     """
     OmegaConf.register_new_resolver("secret", read_secret, replace=True)
     OmegaConf.register_new_resolver("package_dir", package_dir, replace=True)
+    OmegaConf.register_new_resolver("kb_data_dir", kb_data_dir, replace=True)
+
+
+def kb_data_dir(*_ignored: str) -> str:
+    """Return the absolute directory the knowledge base keeps its data in.
+
+    ``KB_DATA_DIR`` wins, then ``$XDG_DATA_HOME/knowledge-base``, then
+    ``~/.local/share/knowledge-base``. An empty variable counts as unset and a
+    relative one is resolved against the current directory. The resolver is
+    written ``${kb_data_dir:}``; OmegaConf passes it an empty argument, ignored.
+
+    Example:
+        >>> kb_data_dir()  # doctest: +SKIP
+        '/home/me/.local/share/knowledge-base'
+    """
+    explicit = os.environ.get("KB_DATA_DIR")
+    if explicit:
+        return str(Path(explicit).absolute())
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        return str(Path(xdg).absolute() / "knowledge-base")
+    return str(Path.home() / ".local" / "share" / "knowledge-base")
 
 
 def read_secret(name: str, default: str | None = None) -> str:
@@ -59,7 +80,7 @@ def read_secret(name: str, default: str | None = None) -> str:
         return default
     msg = (
         f"secret {name!r} not found: set the {env_var} environment variable, "
-        f"or add {env_var}=... to the .env file at the workspace root"
+        f"or add {env_var}=... to {Path(kb_data_dir()) / '.env'}"
     )
     raise SecretNotFoundError(msg)
 

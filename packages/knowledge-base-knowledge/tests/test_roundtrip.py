@@ -17,7 +17,6 @@ from tools_knowledge_base.operations import (
     store_memory,
     update_memory_item,
 )
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base_knowledge.kind import KnowledgeKind, KnowledgePayload
 
 
@@ -33,7 +32,7 @@ def test_a_fact_is_stored_found_and_deleted() -> None:
     fact = {"category": "fact", "content": "the sky is blue"}
 
     accepted = store_memory(kb, "knowledge", fact)
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
     assert get_memory_request(kb, accepted.request_id).status == "done"
 
     [hit] = search_memory(kb, "sky blue", kind="knowledge")
@@ -48,16 +47,16 @@ def test_a_fact_is_stored_found_and_deleted() -> None:
 def test_the_content_is_the_key_so_a_category_edit_stays_and_a_reword_moves() -> None:
     kb = open_fake_kb(KnowledgeKind())
     first = store_memory(kb, "knowledge", {"category": "fact", "content": "tea at five"})
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
 
     kept = update_memory_item(
         kb, "knowledge", first.item_id, {"category": "preference", "content": "tea at five"}
     )
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
     moved = update_memory_item(
         kb, "knowledge", first.item_id, {"category": "preference", "content": "tea at six"}
     )
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
 
     assert kept.item_id == first.item_id
     assert moved.item_id != first.item_id
@@ -74,7 +73,7 @@ def test_a_bad_category_fails_at_enqueue() -> None:
     with pytest.raises(ValidationError):
         store_memory(kb, "knowledge", {"category": "rumour", "content": "x"})
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_render_and_embed_text() -> None:

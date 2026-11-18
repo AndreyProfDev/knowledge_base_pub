@@ -17,7 +17,6 @@ from tools_knowledge_base.operations import (
     store_memory,
     update_memory_item,
 )
-from tools_knowledge_base.queue import drain
 
 
 def _titles(kb: KnowledgeBase) -> list[str]:
@@ -28,26 +27,26 @@ def _titles(kb: KnowledgeBase) -> list[str]:
 
 def test_an_edit_keeping_the_key_updates_the_item_in_place() -> None:
     kb = open_fake_kb()
-    old = stored(kb, "huey")
+    old = stored(kb, "celery")
 
-    edit = update_memory_item(kb, "fake", old.item_id, {"title": "huey", "tags": ["edited"]})
-    drain(kb.huey)
+    edit = update_memory_item(kb, "fake", old.item_id, {"title": "celery", "tags": ["edited"]})
+    kb.writes.drain()
 
     assert edit.item_id == old.item_id
     assert edit.status == "queued"
     assert get_memory_item(kb, "fake", old.item_id).payload == FakePayload(
-        title="huey", tags=["edited"]
+        title="celery", tags=["edited"]
     )
-    assert _titles(kb) == ["huey"]
+    assert _titles(kb) == ["celery"]
 
 
 def test_an_edit_changing_the_key_stores_the_new_id_and_retires_the_old() -> None:
     kb = open_fake_kb()
-    old = stored(kb, "huey")
+    old = stored(kb, "celery")
 
     edit = update_memory_item(kb, "fake", old.item_id, {"title": "renamed", "tags": []})
     assert get_memory_item(kb, "fake", old.item_id)  # the old point stays until the worker runs
-    drain(kb.huey)
+    kb.writes.drain()
 
     assert edit.item_id != old.item_id
     assert get_memory_item(kb, "fake", edit.item_id).payload.model_dump()["title"] == "renamed"
@@ -57,38 +56,35 @@ def test_an_edit_changing_the_key_stores_the_new_id_and_retires_the_old() -> Non
 
 def test_a_write_of_the_old_key_requested_after_the_edit_outlives_it() -> None:
     kb = open_fake_kb()
-    old = stored(kb, "huey")
+    old = stored(kb, "celery")
     update_memory_item(kb, "fake", old.item_id, {"title": "renamed", "tags": []})
-    store_memory(kb, "fake", {"title": "huey", "tags": ["again"]})
-    edit_task = kb.huey.dequeue()  # pyright: ignore[reportUnknownVariableType]
-    restore_task = kb.huey.dequeue()  # pyright: ignore[reportUnknownVariableType]
+    store_memory(kb, "fake", {"title": "celery", "tags": ["again"]})
 
-    # The later re-store finishes first; the edit's delete must spare it.
-    kb.huey.execute(restore_task)  # pyright: ignore[reportUnknownMemberType]
-    kb.huey.execute(edit_task)  # pyright: ignore[reportUnknownMemberType]
+    # The edit's delete of the old key runs first; the later re-store must survive it.
+    kb.writes.drain()
 
-    assert _titles(kb) == ["huey", "renamed"]
+    assert _titles(kb) == ["celery", "renamed"]
     assert get_memory_item(kb, "fake", old.item_id).payload == FakePayload(
-        title="huey", tags=["again"]
+        title="celery", tags=["again"]
     )
 
 
 def test_an_edit_validates_its_payload_before_enqueue() -> None:
     kb = open_fake_kb()
-    old = stored(kb, "huey")
+    old = stored(kb, "celery")
 
     with pytest.raises(ValidationError):
-        update_memory_item(kb, "fake", old.item_id, {"title": "huey"})
+        update_memory_item(kb, "fake", old.item_id, {"title": "celery"})
     with pytest.raises(ValidationError, match="embed text is empty"):
         update_memory_item(kb, "fake", old.item_id, {"title": "", "tags": []})
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_an_edit_of_an_absent_or_other_kinds_id_is_not_found() -> None:
     kb = open_fake_kb(FakeKind("fake"), FakeKind("other"))
-    other = stored(kb, "huey", kind="other")
-    payload: dict[str, object] = {"title": "huey", "tags": []}
+    other = stored(kb, "celery", kind="other")
+    payload: dict[str, object] = {"title": "celery", "tags": []}
 
     with pytest.raises(ItemNotFound):
         update_memory_item(kb, "fake", uuid4(), payload)
@@ -97,4 +93,4 @@ def test_an_edit_of_an_absent_or_other_kinds_id_is_not_found() -> None:
     with pytest.raises(UnknownKind):
         update_memory_item(kb, "nope", other.item_id, payload)
 
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0

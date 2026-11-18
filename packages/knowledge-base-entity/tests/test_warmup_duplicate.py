@@ -9,7 +9,7 @@ from fake_kb import open_fake_kb
 from pydantic import ValidationError
 from warmup_harness import warmup_settings, write_yaml
 
-from tools_knowledge_base.operations import warmup_memory
+from tools_knowledge_base.operations import list_memory_items, warmup_memory
 from tools_knowledge_base_entity.kind import EntityKind
 
 
@@ -22,7 +22,7 @@ def test_the_same_name_and_type_in_two_files_names_both_locations(tmp_path: Path
     with pytest.raises(ValidationError) as caught:
         warmup_memory(kb)
 
-    assert kb.huey.pending_count() == 0
+    assert list_memory_items(kb, "entity").items == []
     [error] = caught.value.errors()
     assert error["loc"] == ("b.yaml", "entity", 0)
     assert error["msg"] == "same entity key as a.yaml:entity[0]; b.yaml:entity[0] repeats it"

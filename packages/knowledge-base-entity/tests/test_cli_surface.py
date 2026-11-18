@@ -8,7 +8,6 @@ from fake_kb import open_fake_kb
 
 from tools_knowledge_base.errors import ItemNotFound
 from tools_knowledge_base.operations import get_memory_item
-from tools_knowledge_base.queue import drain
 from tools_knowledge_base_entity.kind import EntityKind, EntityPayload
 
 
@@ -19,7 +18,7 @@ def test_store_entity_binds_the_type_and_search_accepts_the_kind() -> None:
         kb, "store-entity", "--name", "Alice", "--type", "person", "--description", "the user"
     )
     assert code == 0, out
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
     assert get_memory_item(kb, "entity", item_id_in(out)).payload == EntityPayload(
         name="Alice", type="person", description="the user"
     )
@@ -37,7 +36,7 @@ def test_store_entity_refuses_a_type_outside_the_set_and_queues_nothing() -> Non
     )
     assert code != 0, out
     assert "planet" in out
-    assert kb.huey.pending_count() == 0
+    assert kb.writes.queued() == 0
 
 
 def test_the_help_explains_the_fields_and_lists_the_types() -> None:
@@ -54,20 +53,20 @@ def test_the_help_explains_the_fields_and_lists_the_types() -> None:
 
 def test_update_entity_with_a_new_type_moves_the_item() -> None:
     kb = open_fake_kb(EntityKind())
-    _, out = invoke(kb, "store-entity", "--name", "huey", "--type", "system", "--description", "q")
-    assert drain(kb.huey) == (1, 0)
+    _, out = invoke(kb, "store-entity", "--name", "rq", "--type", "system", "--description", "q")
+    kb.writes.drain()
     item_id = item_id_in(out)
 
     code, out = invoke(
-        kb, "update-entity", str(item_id), "--name", "huey", "--type", "tool", "--description", "q"
+        kb, "update-entity", str(item_id), "--name", "rq", "--type", "tool", "--description", "q"
     )
     assert code == 0, out
     new_id = item_id_in(out)
     assert new_id != item_id
-    assert drain(kb.huey) == (1, 0)
+    kb.writes.drain()
 
     with pytest.raises(ItemNotFound):
         get_memory_item(kb, "entity", item_id)
     assert get_memory_item(kb, "entity", new_id).payload == EntityPayload(
-        name="huey", type="tool", description="q"
+        name="rq", type="tool", description="q"
     )

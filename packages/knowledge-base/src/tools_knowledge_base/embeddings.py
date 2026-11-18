@@ -6,15 +6,14 @@ from collections.abc import Callable, Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Protocol
 
-import tiktoken
-from openai import OpenAI, OpenAIError
-from tokenizers import Tokenizer
-
 from tools_knowledge_base.configs.settings import EmbedderSettings
 from tools_knowledge_base.errors import KnowledgeBaseError
 
 if TYPE_CHECKING:
     import httpx2
+    import tiktoken
+    from openai import OpenAI
+    from tokenizers import Tokenizer
 
 
 class Embedder(Protocol):
@@ -59,12 +58,14 @@ class OpenAIEmbedder:
         *,
         http_client: httpx2.Client | None = None,
         encoding: tiktoken.Encoding | None = None,
-        load_tokenizer: Callable[[str], Tokenizer] = Tokenizer.from_pretrained,
+        load_tokenizer: Callable[[str], Tokenizer] | None = None,
+        require_key: Callable[[], None] | None = None,
     ) -> None:
         self._config = config
         self._http_client = http_client
         self._injected_encoding = encoding
         self._load_tokenizer = load_tokenizer
+        self._injected_require_key = require_key
         self.vector_space = f"{config.model}-{config.dimensions}"
         self.dimensions = config.dimensions
         self.max_input_tokens = config.max_input_tokens
@@ -73,13 +74,17 @@ class OpenAIEmbedder:
     @cached_property
     def _encoding(self) -> tiktoken.Encoding:
         # Loaded on first count, not at construction: the first load downloads.
+        import tiktoken  # noqa: PLC0415 - deferred: importing it costs ~0.2 s at server start
+
         return self._injected_encoding or tiktoken.encoding_for_model(self._config.model)
 
     @cached_property
     def _hf_tokenizer(self) -> Tokenizer:
         # The Hub repo's own tokenizer.json, which TEI tokenizes with too; fetched once.
         # Tests inject the loader, so the settings below are applied to their tokenizer too.
-        tokenizer = self._load_tokenizer(self._config.model)
+        from tokenizers import Tokenizer  # noqa: PLC0415 - deferred: heavy native import
+
+        tokenizer = (self._load_tokenizer or Tokenizer.from_pretrained)(self._config.model)
         # A repo's tokenizer.json may enable truncation or padding: either would make
         # count_tokens report the clipped or padded length, not the document's, and the
         # max_input_tokens guard would pass an over-long input or refuse a short one.
@@ -92,6 +97,8 @@ class OpenAIEmbedder:
         # Built on first embed, after _require_key: an empty key makes OpenAI() raise (or
         # read OPENAI_API_KEY instead), and get/list/delete must open without a key.
         # Tests inject only the transport, so base_url and api_key are still read here.
+        from openai import OpenAI  # noqa: PLC0415 - deferred: importing it costs ~0.25 s
+
         return OpenAI(
             base_url=self._config.base_url,
             api_key=self._config.api_key.get_secret_value(),
@@ -100,6 +107,8 @@ class OpenAIEmbedder:
 
     def _require_key(self) -> None:
         """Refuse an empty key before any request, and before a write is accepted."""
+        if self._injected_require_key is not None:
+            self._injected_require_key()
         if not self._config.api_key.get_secret_value():
             msg = (
                 f"embedder {self._config.model} at {self._config.base_url} has no api_key: "
@@ -134,6 +143,8 @@ class OpenAIEmbedder:
 
     def _embed(self, inputs: list[str]) -> list[list[float]]:
         self._require_key()
+        from openai import OpenAIError  # noqa: PLC0415 - deferred: see _client
+
         try:
             response = self._client.embeddings.create(
                 model=self._config.model, input=inputs, dimensions=self._config.dimensions

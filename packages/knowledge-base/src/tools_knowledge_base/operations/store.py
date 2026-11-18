@@ -1,9 +1,10 @@
-"""Store and edit: validated at request time, then queued for the worker to embed."""
+"""Store and edit: validated at request time, then queued to be embedded."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from functools import partial
 from typing import NoReturn
 from uuid import UUID, uuid5
 
@@ -14,7 +15,7 @@ from tools_knowledge_base.context import KnowledgeBase
 from tools_knowledge_base.kinds.protocol import MemoryKind
 from tools_knowledge_base.models import WriteAccepted
 from tools_knowledge_base.operations.items import stored_item
-from tools_knowledge_base.queue import enqueue_write
+from tools_knowledge_base.writes import write_item
 
 KB_NAMESPACE = UUID("6f1c3a52-9d4e-4b7a-8c2f-0e5d7b9a1c34")
 """Item ids are ``uuid5(KB_NAMESPACE, f"{kind}:{key}")``: one key, one point."""
@@ -86,16 +87,18 @@ def item_id_of(kind: MemoryKind, model: BaseModel) -> UUID:
 def enqueue_item(
     kb: KnowledgeBase, kind: MemoryKind, model: BaseModel, replaces: UUID | None
 ) -> WriteAccepted:
-    """Queue ``model`` for the worker to embed and write; ``model`` is already validated."""
+    """Queue ``model`` to be embedded and written; ``model`` is already validated."""
     item_id = item_id_of(kind, model)
-    request_id = enqueue_write(
-        kb.write_memory,
+    job = partial(
+        write_item,
+        kb,
         kind=kind.name,
         item_id=item_id,
         payload=model.model_dump(mode="json"),
         updated_at=datetime.now(UTC),
         replaces=replaces,
     )
+    request_id = kb.writes.submit(job)
     return WriteAccepted(request_id=request_id, item_id=item_id, status="queued")
 
 

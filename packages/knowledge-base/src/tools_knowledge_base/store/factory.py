@@ -51,8 +51,8 @@ def open_store(
         # A list, so that no installed backend reads as installed: [].
         installed = sorted(ExtensionManager(VECTOR_STORES).names())
         msg = (
-            f"vector store backend {backend!r} is not installed (installed: {installed}); "
-            f"install tools-knowledge-base-{backend} or pick an installed backend"
+            f"vector store {backend!r} is not installed; "
+            f"install knowledge-base-mcp-server[{backend}] (installed: {installed})"
         )
         raise KnowledgeBaseError(msg) from exc
     # invoke_on_load=True makes the driver the adapter instance, never its class.

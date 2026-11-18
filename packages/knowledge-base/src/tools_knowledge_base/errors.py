@@ -32,27 +32,23 @@ class WarmupDirectoryEmpty(KnowledgeBaseError):  # noqa: N818 - sibling of Warmu
 class WarmupDumpFailed(KnowledgeBaseError):  # noqa: N818 - sibling of WarmupDirectoryMissing
     """A dump file could not be written or removed; the message names the file.
 
-    huey records only the exception's ``repr``, so an ``OSError`` alone loses the path.
+    A failed request's status carries only the exception's type and message, so an
+    ``OSError`` alone can lose the path.
     """
 
 
-class DumpRemovalNotQueued(KnowledgeBaseError):  # noqa: N818 - sibling of WarmupDumpFailed
-    """The item was deleted, but queueing its dump file's removal failed.
+class WarmupPartiallyWritten(KnowledgeBaseError):  # noqa: N818 - sibling of WarmupDumpFailed
+    """A warm-up batch failed to embed or write; the batches before it stay written."""
 
-    Not ``ItemNotFound``: a retry of the delete would get that, and the file would stay.
-    """
+    def __init__(self, written: int, kind: str, batch: int, cause: Exception) -> None:
+        super().__init__(
+            f"warm-up stopped at {kind} batch {batch} after writing {written} items: "
+            f"{type(cause).__name__}: {cause}"
+        )
 
 
-class UnknownWarmupRun(KnowledgeBaseError):  # noqa: N818 - sibling of UnknownRequest
-    """No warm-up run with the given id was recorded on this knowledge base."""
-
-
-class WarmupPartiallyQueued(KnowledgeBaseError):  # noqa: N818 - sibling of WarmupDirectoryEmpty
-    """An enqueue, or recording run ``run_id``, failed; ``problem`` says which and how far."""
-
-    def __init__(self, run_id: str, problem: str, cause: Exception) -> None:
-        self.run_id = run_id
-        super().__init__(f"warm-up run {run_id} {problem}: {type(cause).__name__}: {cause}")
+class WriteRefused(KnowledgeBaseError):  # noqa: N818 - sibling of WarmupDumpFailed
+    """A queued write that no retry can fix: unknown kind, invalid payload, or a stale write."""
 
 
 class StoredItemInvalid(KnowledgeBaseError):  # noqa: N818 - sibling of ItemNotFound

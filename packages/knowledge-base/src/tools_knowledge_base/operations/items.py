@@ -9,13 +9,12 @@ from pydantic import ValidationError
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from tools_knowledge_base.context import KnowledgeBase
-from tools_knowledge_base.errors import DumpRemovalNotQueued, ItemNotFound, stored_as
+from tools_knowledge_base.errors import ItemNotFound, stored_as
 from tools_knowledge_base.kinds.protocol import MemoryKind
 from tools_knowledge_base.limits import MAX_LIMIT
 from tools_knowledge_base.models import MemoryItem, MemoryPage, WriteAccepted
 from tools_knowledge_base.store.protocol import Item
-from tools_knowledge_base.tasks import enqueue_forget
-from tools_knowledge_base.warmup_dump import dump_file_name
+from tools_knowledge_base.writes import forget_item
 
 
 def memory_item(kind: MemoryKind, item: Item) -> MemoryItem:
@@ -100,30 +99,27 @@ def list_memory_items(
 
 
 def delete_memory_item(kb: KnowledgeBase, kind: str, item_id: UUID) -> WriteAccepted:
-    """Delete item ``item_id`` of ``kind``; returns the request removing its dump file.
+    """Delete item ``item_id`` of ``kind`` and its dump file; the request is already settled.
 
-    Only its ``kind`` is read, so a corrupt item goes too. The store delete is
-    immediate; the dump file is removed by the worker, the one process mounting
-    ``warmup.path`` writable. Poll the request: until it is ``done`` the file can
-    bring the item back at the next warm-up.
+    Only its ``kind`` is read, so a corrupt item goes too. Queued writes run first, so
+    none stores the item again afterwards. The request is ``done``, or ``failed`` when
+    the dump file could not be removed: the item is deleted then, but the file can
+    bring it back at the next warm-up.
 
     Raises:
         UnknownKind: no installed kind is called ``kind``.
         ItemNotFound: no item of ``kind`` has ``item_id``.
-        DumpRemovalNotQueued: the item is deleted, but queueing the removal failed.
     """
     kb.kinds.get(kind)
     if kb.store.kind_of(item_id) != kind:
         msg = f"no {kind} item has id {item_id}"
         raise ItemNotFound(msg)
-    # Delete before enqueue: the worker skips the removal while the item is still stored.
+    # Else a queued update would upsert the item again after the delete.
+    kb.writes.drain()
     kb.store.delete([item_id])
     try:
-        request_id = enqueue_forget(kb.forget_memory, kind=kind, item_id=item_id)
+        forget_item(kb, kind, item_id)
     except Exception as exc:
-        msg = (
-            f"{kind} item {item_id} deleted; dump file {dump_file_name(kind, item_id)} not"
-            f" scheduled for removal: {type(exc).__name__}: {exc}"
-        )
-        raise DumpRemovalNotQueued(msg) from exc
-    return WriteAccepted(request_id=request_id, item_id=item_id, status="queued")
+        error = f"{type(exc).__name__}: {exc}"
+        return WriteAccepted(request_id=kb.writes.settled(error), item_id=item_id, status="failed")
+    return WriteAccepted(request_id=kb.writes.settled(), item_id=item_id, status="done")
